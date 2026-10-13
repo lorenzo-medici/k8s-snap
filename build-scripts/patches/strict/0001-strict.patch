@@ -1,4 +1,4 @@
-From 41b4233018afa902ffcf405cb9157f1a249bb184 Mon Sep 17 00:00:00 2001
+From 17eea3560f15e1f18a3f6b3cb8daf65df58ba307 Mon Sep 17 00:00:00 2001
 From: k8s-snap strict <k8s-snap-strict@canonical.com>
 Date: Tue, 13 Oct 2026 10:03:04 +0300
 Subject: [PATCH] strict: flavor patch
@@ -29,7 +29,6 @@ Subject: [PATCH] strict: flavor patch
  snap/hooks/connect-plug-k8s-audit-log         |   1 +
  snap/hooks/connect-plug-k8s-etc               |   1 +
  snap/hooks/connect-plug-k8s-etc-ro            |   1 +
- snap/hooks/connect-plug-k8s-kubelet           |   1 +
  snap/hooks/connect-plug-k8s-kubeproxy         |   1 +
  snap/hooks/connect-plug-k8s-sysctl            |   1 +
  snap/hooks/connect-plug-kernel-crypto-api     |   1 +
@@ -45,8 +44,8 @@ Subject: [PATCH] strict: flavor patch
  snap/hooks/connect-plug-opengl                |   1 +
  snap/hooks/connect-plug-process-control       |   1 +
  snap/hooks/connect-plug-system-observe        |   1 +
- snap/snapcraft.yaml                           | 225 +++++++++++++++++-
- 31 files changed, 248 insertions(+), 85 deletions(-)
+ snap/snapcraft.yaml                           | 220 +++++++++++++++++-
+ 30 files changed, 242 insertions(+), 85 deletions(-)
  delete mode 100644 k8s/pebble/000-k8s.yaml
  delete mode 100644 k8s/pebble/pebble.service
  create mode 120000 snap/hooks/connect-plug-cifs-mount
@@ -61,7 +60,6 @@ Subject: [PATCH] strict: flavor patch
  create mode 120000 snap/hooks/connect-plug-k8s-audit-log
  create mode 120000 snap/hooks/connect-plug-k8s-etc
  create mode 120000 snap/hooks/connect-plug-k8s-etc-ro
- create mode 120000 snap/hooks/connect-plug-k8s-kubelet
  create mode 120000 snap/hooks/connect-plug-k8s-kubeproxy
  create mode 120000 snap/hooks/connect-plug-k8s-sysctl
  create mode 120000 snap/hooks/connect-plug-kernel-crypto-api
@@ -266,14 +264,6 @@ index 00000000..cabc7046
 @@ -0,0 +1 @@
 +configure
 \ No newline at end of file
-diff --git a/snap/hooks/connect-plug-k8s-kubelet b/snap/hooks/connect-plug-k8s-kubelet
-new file mode 120000
-index 00000000..cabc7046
---- /dev/null
-+++ b/snap/hooks/connect-plug-k8s-kubelet
-@@ -0,0 +1 @@
-+configure
-\ No newline at end of file
 diff --git a/snap/hooks/connect-plug-k8s-kubeproxy b/snap/hooks/connect-plug-k8s-kubeproxy
 new file mode 120000
 index 00000000..cabc7046
@@ -395,7 +385,7 @@ index 00000000..cabc7046
 +configure
 \ No newline at end of file
 diff --git a/snap/snapcraft.yaml b/snap/snapcraft.yaml
-index 93333818..388071ca 100644
+index 93333818..ab0df777 100644
 --- a/snap/snapcraft.yaml
 +++ b/snap/snapcraft.yaml
 @@ -7,7 +7,8 @@ description: |-
@@ -423,7 +413,7 @@ index 93333818..388071ca 100644
  
  architectures:
    - build-on: [amd64]
-@@ -26,6 +29,82 @@ architectures:
+@@ -26,6 +29,79 @@ architectures:
    - build-on: [ppc64el]
    - build-on: [s390x]
  
@@ -440,9 +430,6 @@ index 93333818..388071ca 100644
 +  docker-unprivileged:
 +    interface: docker-support
 +    privileged-containers: false
-+  k8s-kubelet:
-+    interface: kubernetes-support
-+    flavor: kubelet
 +  k8s-kubeproxy:
 +    interface: kubernetes-support
 +    flavor: kubeproxy
@@ -506,7 +493,7 @@ index 93333818..388071ca 100644
  parts:
    build-deps:
      plugin: nil
-@@ -278,6 +357,23 @@ parts:
+@@ -278,6 +354,23 @@ parts:
  apps:
    k8s:
      command: k8s/wrappers/commands/k8s
@@ -530,7 +517,7 @@ index 93333818..388071ca 100644
    containerd:
      command: k8s/wrappers/services/containerd
      daemon: notify
-@@ -288,43 +384,162 @@ apps:
+@@ -288,43 +381,160 @@ apps:
      restart-condition: always
      start-timeout: 5m
      before: [kubelet]
@@ -582,7 +569,6 @@ index 93333818..388071ca 100644
 +      - firewall-control
 +      - hardware-observe
 +      - k8s-etc-ro
-+      - k8s-kubelet
 +      - kernel-module-observe
 +      - kubernetes-support
 +      - mount-observe
@@ -686,7 +672,6 @@ index 93333818..388071ca 100644
 +  remove:
 +    plugs:
 +      - firewall-control
-+      - k8s-kubelet
 +      - k8s-sysctl
 +      - kubernetes-support
 +      - mount-observe
