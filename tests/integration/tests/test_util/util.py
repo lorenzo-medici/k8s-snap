@@ -262,6 +262,11 @@ def preload_snaps(instance: harness.Instance):
 
 
 def setup_core_dumps(instance: harness.Instance):
+    """Enable host-wide core dumps for the classic snap.
+
+    NOTE: /var/crash is not reachable under strict confinement, so core dump
+    collection is only available on classic.
+    """
     core_pattern = os.path.join(config.CORE_DUMP_DIR, config.CORE_DUMP_PATTERN)
     LOG.info("Configuring core dumps. Pattern: %s", core_pattern)
     instance.exec(["echo", core_pattern, ">", "/proc/sys/kernel/core_pattern"])
@@ -287,7 +292,9 @@ def setup_k8s_snap(
             a path to the snap to install
         tmp_path:   path to store the snap on the instance (optional, defaults to /home/ubuntu)
     """
-    cmd = ["snap", "install", "--classic"]
+    cmd = ["snap", "install"]
+    if config.FLAVOR != "strict":
+        cmd += ["--classic"]
     which_snap = snap or config.SNAP
 
     if not which_snap:
@@ -352,15 +359,10 @@ def snap_refresh(
         retries:    number of retry attempts (default: 3)
         delay_s:    delay in seconds between retries (default: 30)
     """
-    cmd = [
-        "snap",
-        "refresh",
-        config.SNAP_NAME,
-        *snap_channel_args(channel),
-        # note: the `--classic` flag will be ignored by snapd for strict snaps.
-        "--classic",
-        *extra_args,
-    ]
+    cmd = ["snap", "refresh", config.SNAP_NAME, *snap_channel_args(channel)]
+    if config.FLAVOR != "strict":
+        cmd += ["--classic"]
+    cmd += list(extra_args)
     LOG.info(
         "Refreshing %s to channel %s on %s", config.SNAP_NAME, channel, instance.id
     )
@@ -382,31 +384,33 @@ def remove_k8s_snap(instance: harness.Instance):
     ).exec(["ps", "-fea"])
 
     LOG.info("Waiting for kubelet and containerd mounts to go away...")
+    # Under strict confinement, kubelet and containerd state lives under
+    # SNAP_COMMON (relocated by k8sd and the layouts), so the mounts to wait
+    # for are the $SNAP_COMMON paths.
+    if config.FLAVOR == "strict":
+        mount_paths = [
+            "/var/snap/k8s/common/var/lib/kubelet/pods",
+            "/var/snap/k8s/common/run/containerd",
+        ]
+    else:
+        mount_paths = ["/var/lib/kubelet/pods", "/run/containerd/io.containerd"]
     stubbornly(retries=40, delay_s=5).on(instance).until(
-        lambda p: all(
-            x not in p.stdout.decode()
-            for x in ["/var/lib/kubelet/pods", "/run/containerd/io.containerd"]
-        )
+        lambda p: all(x not in p.stdout.decode() for x in mount_paths)
     ).exec(["mount"])
 
-    # NOTE(neoaggelos): Temporarily disable this as it fails on strict.
-    # For details, `snap changes` then `snap change $remove_k8s_snap_change`.
-    # Example output follows:
-    #
-    # 2024-02-23T14:10:42Z ERROR ignoring failure in hook "remove":
-    # -----
-    # ...
-    # ip netns delete cni-UUID1
-    # Cannot remove namespace file "/run/netns/cni-UUID1": Device or resource busy
-    # ip netns delete cni-UUID2
-    # Cannot remove namespace file "/run/netns/cni-UUID2": Device or resource busy
-    # ip netns delete cni-UUID3
-    # Cannot remove namespace file "/run/netns/cni-UUID3": Device or resource busy
-
-    # LOG.info("Waiting for CNI network namespaces to go away...")
-    # stubbornly(retries=5, delay_s=5).on(instance).until(
-    #     lambda p: "cni-" not in p.stdout.decode()
-    # ).exec(["ip", "netns", "list"])
+    # Only wait for CNI network namespaces if any exist: on some removals the
+    # netns bind mounts are dropped lazily, and waiting unconditionally is
+    # flaky (see https://github.com/canonical/k8s-snap remove-hook failures).
+    netns = instance.exec(
+        ["sh", "-c", "ls /run/netns/ 2>/dev/null || true"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    if "cni-" in netns:
+        LOG.info("Waiting for CNI network namespaces to go away...")
+        stubbornly(retries=5, delay_s=5).on(instance).until(
+            lambda p: "cni-" not in p.stdout.decode()
+        ).exec(["sh", "-c", "ls /run/netns/ 2>/dev/null || true"])
 
 
 def wait_until_k8s_ready(
@@ -439,6 +443,35 @@ def wait_until_k8s_ready(
     LOG.info("Successfully checked Kubelet registered on all harness instances.")
     result = control_node.exec(["k8s", "kubectl", "get", "node"], capture_output=True)
     LOG.info("%s", result.stdout.decode().strip())
+
+    if config.FLAVOR == "strict":
+        # Under strict confinement, AppArmor denials otherwise only surface as
+        # unrelated timeouts far from their cause. Fail fast instead.
+        for instance in instances:
+            assert_no_apparmor_denials(instance)
+
+
+def assert_no_apparmor_denials(instance: harness.Instance) -> None:
+    """Fail if the kernel log contains AppArmor denials since boot.
+
+    'operation="not mount"' lines are noise from mount(2) flag probing and
+    are ignored.
+    """
+    out = instance.exec(
+        ["journalctl", "-k", "--no-pager", "-g", 'apparmor="DENIED"'],
+        capture_output=True,
+        check=False,
+    )
+    lines = [
+        line
+        for line in out.stdout.decode().splitlines()
+        if 'apparmor="DENIED"' in line and 'operation="not mount"' not in line
+    ]
+    if lines:
+        raise AssertionError(
+            "AppArmor denials detected on %s:\n%s"
+            % (instance.id, "\n".join(lines))
+        )
 
 
 def is_node_ready(
@@ -837,7 +870,7 @@ def tracks_least_risk(track: str, arch: str) -> str:
     """
     LOG.debug("Determining least risk channel for track: %s on %s", track, arch)
     if track == "latest":
-        return f"latest/edge/{config.FLAVOR or 'classic'}"
+        return _latest_edge_channel()
 
     INFO_URL = f"https://api.snapcraft.io/v2/snaps/info/{config.SNAP_NAME}"
     HEADERS = {
@@ -877,8 +910,23 @@ def major_minor(version: str) -> Optional[tuple]:
 
 
 def _get_flavor() -> str:
-    """Determine the flavor of the snap."""
-    return {"": "classic", "strict": ""}.get(config.FLAVOR, config.FLAVOR)
+    """Determine the versioned-track suffix of the snap flavor.
+
+    Since 1.36 (D9) both flavors publish on the bare track (e.g. '1.36/stable'),
+    so there is no track suffix for either flavor.
+    """
+    return {"": "", "classic": "", "strict": ""}.get(config.FLAVOR, config.FLAVOR)
+
+
+def _latest_edge_channel() -> str:
+    """Determine the 'latest' edge channel for the snap flavor.
+
+    'latest' is a single track, so the flavor is carried by the branch:
+    classic is the default branch ('latest/edge'), strict is
+    'latest/edge/strict'.
+    """
+    flavor = {"": "", "classic": ""}.get(config.FLAVOR, config.FLAVOR)
+    return f"latest/edge/{flavor}" if flavor else "latest/edge"
 
 
 def _major_minor_from_stable_upstream(maj: Optional[int] = None) -> Optional[tuple]:
@@ -911,7 +959,7 @@ def _find_stable_track(major: int, minor: int, flavor: str) -> Optional[str]:
         flavor: the snap flavor (e.g. 'classic', '')
 
     Returns:
-        the track string (e.g. '1.36-classic') or None if no stable track is found
+        the track string (e.g. '1.36') or None if no stable track is found
     """
     INFO_URL = f"https://api.snapcraft.io/v2/snaps/info/{config.SNAP_NAME}"
     HEADERS = {
@@ -1030,11 +1078,11 @@ def previous_track(snap_version: str) -> str:
             return prev
         else:
             LOG.info(
-                "Previous track for %s from branch %s is not found -- assume latest",
-                snap_version,
-                branch,
-            )
-            return f"latest/edge/{_get_flavor()}"
+            "Previous track for %s from branch %s is not found -- assume latest",
+            snap_version,
+            branch,
+        )
+        return _latest_edge_channel()
 
     if maj_min := major_minor(snap_version):
         maj, min = maj_min

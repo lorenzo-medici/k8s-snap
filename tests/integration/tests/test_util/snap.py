@@ -37,7 +37,8 @@ def get_snap_info(snap_name=SNAP_NAME):
 def filter_arch_and_flavor(channels: List[dict], arch: str, flavor: str) -> List[tuple]:
     """Filter available channels by architecture and match them with a given regex pattern
     for a flavor."""
-    if flavor == "strict":
+    if flavor in ("classic", "strict"):
+        # Since 1.36 (D9) both flavors publish on the bare track, e.g. '1.36/stable'
         pattern = re.compile(r"(\d+)\.(\d+)\/(" + "|".join(RISK_LEVELS) + ")")
     else:
         pattern = re.compile(
@@ -103,9 +104,21 @@ def get_most_stable_channels(
     final_channels = [channel_map[v][0] for v in sorted_versions[:num_of_channels]]
 
     if include_latest:
-        final_channels.append(f"latest/edge/{flavor}")
+        final_channels.append(latest_edge_channel(flavor))
 
     return final_channels
+
+
+def latest_edge_channel(flavor: str) -> str:
+    """The 'latest/edge' channel for a flavor.
+
+    'latest' is a single track, so the flavor is carried by the branch:
+    classic is the default branch ('latest/edge'), strict is
+    'latest/edge/strict'.
+    """
+    if flavor == "strict":
+        return "latest/edge/strict"
+    return "latest/edge"
 
 
 def get_channels(
@@ -120,7 +133,7 @@ def get_channels(
     matching_channels = [ch[0] for ch in arch_flavor_channels if ch[3] == risk_level]
     matching_channels = matching_channels[:num_of_channels]
     if include_latest:
-        latest_channel = f"latest/edge/{flavor}"
+        latest_channel = latest_edge_channel(flavor)
         matching_channels.append(latest_channel)
 
     return matching_channels
