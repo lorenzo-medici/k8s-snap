@@ -32,7 +32,8 @@
 - [x] Fix 6: k8sd snapctl patch compile fix — `Strict()` method, not `strict` field (`4de8c266`)
 - [x] Fix 7: kubelet `make-rshared` targets the layout mount point; the two-arg remount form is denied (`b58e372d`)
 - [x] Fix 8: all parts flipped to `no-patchelf` — snapcraft's patchelf retargets to `/snap/core22/current`, denied under strict (`5d893f9a`)
-- [x] Fix 9: k8sd cilium patch — `cni.binPath` spelled host-visible under strict (nsenter init containers) 
+- [x] Fix 9: k8sd cilium patch — `cni.binPath` spelled host-visible under strict (nsenter init containers)
+- [x] Fix 10: k8sd `RunningServiceArgs` — /proc argv[0] fallback under strict (systemctl denied; fixes `k8s status` readiness and the args-drift controller)
 
 ## Verification
 
