@@ -4,9 +4,20 @@
 
 k8s::common::setup_env
 
+# Under strict confinement, block until all declared interface plugs are
+# connected. The hook terminates successfully so each connect-plug-* event
+# re-triggers it; whichever connection lands last brings the cluster up.
+# See https://forum.snapcraft.io/t/mimic-sequence-of-hook-calls-with-auto-connected-interfaces/19618
+if ! k8s::common::check_snap_interfaces; then
+  exit 0
+fi
+
 k8s::cmd::k8s x-snapd-config reconcile
 
 k8s::containerd::ensure_systemd_defaults
+
+# Apply and persist sysctl settings required by Cilium (rp_filter=0)
+k8s::util::apply_sysctl_tuning
 
 # Sanitize kube-apiserver feature gates that
 # do not apply to this version of Kubernetes.
@@ -14,3 +25,13 @@ k8s::apiserver::sanitize_feature_gates
 
 # Move resources from templates to configurations for backwards compatibility
 k8s::common::move_resources
+
+if k8s::common::is_strict; then
+  # All interfaces are connected: enable k8sd (the only install-mode:enable
+  # daemon under strict) and clear the blocked health state, in this order.
+  snapctl start --enable "${SNAP_INSTANCE_NAME}.k8sd" || true
+  snapctl set-health okay
+else
+  # Clear any stale blocked state on classic
+  snapctl set-health okay || true
+fi

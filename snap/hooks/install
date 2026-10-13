@@ -15,3 +15,18 @@ k8s::cmd::k8s x-snapd-config disable || true
 # In order to interact with the REST API the k8sd service
 # needs to be started and configured in the installation step.
 k8s::init::k8sd || true
+
+if k8s::common::is_strict; then
+  # Ensure the bind/bind-file layout sources exist (see snap/snapcraft.yaml).
+  mkdir -p \
+    "$SNAP_COMMON/var/lib/kubelet" \
+    "$SNAP_COMMON/var/lib/cni" \
+    "$SNAP_COMMON/kube-proxy" \
+    "$SNAP_COMMON/opt/cni/bin" \
+    "$SNAP_COMMON/usr/libexec" \
+    "$SNAP_COMMON/usr/local/lib" \
+    "$SNAP_COMMON/var/log/pods" \
+    "$SNAP_COMMON/var/log/containers" \
+    "$SNAP_COMMON/etc"
+  touch "$SNAP_COMMON/etc/nanorc"
+fi
