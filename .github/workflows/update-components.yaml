@@ -53,13 +53,7 @@ jobs:
         with:
           commit-message: "[${{ matrix.branch }}] Update component versions"
           title: "[${{ matrix.branch }}] Update component versions"
-          body: |
-            "[${{ matrix.branch }}] Update component versions
-
-            When a component version changes, check that the per-version patch
-            directories (build-scripts/components/*/patches/, and
-            strict-patches/ for runc) still resolve and apply -- the strict
-            flavor build fails fast when a series no longer matches."
+          body: "[${{ matrix.branch }}] Update component versions"
           branch: "autoupdate/sync/${{ matrix.branch }}"
           labels: |
             automerge
