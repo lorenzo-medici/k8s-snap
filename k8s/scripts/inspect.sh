@@ -35,6 +35,18 @@ NUM_SNAP_LOG_ENTRIES=100000
 TIMEOUT=180s
 CORE_DUMP_DIR="/var/crash"
 
+# NOTE: this script deliberately does not source k8s/lib.sh. It is also invoked
+# by absolute host path (tests), where the SNAP* environment is not set, so the
+# snap paths and the confinement check are resolved locally.
+SNAP_NAME="${SNAP_NAME:-k8s}"
+SNAP_CURRENT="${SNAP:-/snap/${SNAP_NAME}/current}"
+SNAP_COMMON="${SNAP_COMMON:-/var/snap/${SNAP_NAME}/common}"
+
+# Return 0 if the k8s snap is strictly confined
+function is_strict {
+  grep -q 'confinement: strict' "${SNAP_CURRENT}/meta/snap.yaml" 2>/dev/null
+}
+
 function log_success {
   printf -- '\033[32m SUCCESS: \033[0m %s\n' "$1"
 }
@@ -79,12 +91,16 @@ function is_service_active {
   local service
   service=$1
 
-  systemctl status "snap.$service" | grep -q "active (running)"
+  if is_strict; then
+    ! snapctl services "$service" 2>/dev/null | grep -q "inactive"
+  else
+    systemctl status "snap.$service" | grep -q "active (running)"
+  fi
 }
 
 function collect_args {
   log_info "Copy service args to the final report tarball"
-  cp -r --no-preserve=mode,ownership /var/snap/k8s/common/args "$INSPECT_DUMP"
+  cp -r --no-preserve=mode,ownership "$SNAP_COMMON/args" "$INSPECT_DUMP"
 }
 
 function collect_cluster_info {
@@ -100,7 +116,7 @@ function collect_cluster_info {
 
 function collect_sbom {
   log_info "Copy SBOM to the final report tarball"
-  cp --no-preserve=mode,ownership /snap/k8s/current/bom.json "$INSPECT_DUMP"/sbom.json
+  cp --no-preserve=mode,ownership "$SNAP_CURRENT/bom.json" "$INSPECT_DUMP"/sbom.json
 }
 
 function collect_system_info {
@@ -111,26 +127,35 @@ function collect_system_info {
   log_info "Copy disk usage information to the final report tarball"
   df -h | grep "^/" &> $INSPECT_DUMP/sys/disk_usage
 
-  log_info "Copy /proc/mounts to the final report tarball"
-  cp /proc/mounts $INSPECT_DUMP/sys/proc-mounts
+  if ! is_strict; then
+    log_info "Copy /proc/mounts to the final report tarball"
+    cp /proc/mounts $INSPECT_DUMP/sys/proc-mounts
+  fi
 
   log_info "Copy memory usage information to the final report tarball"
   free -m > $INSPECT_DUMP/sys/memory_usage
 
-  log_info "Copy swap information to the final report tarball"
-  swapon > $INSPECT_DUMP/sys/swap
+  if ! is_strict; then
+    log_info "Copy swap information to the final report tarball"
+    swapon > $INSPECT_DUMP/sys/swap
+  fi
 
   log_info "Copy node uptime to the final report tarball"
   uptime > $INSPECT_DUMP/sys/uptime
 
-  log_info "Copy /etc/os-release to the final report tarball"
-  cp /etc/os-release $INSPECT_DUMP/sys/etc-os-release
+  if ! is_strict; then
+    log_info "Copy /etc/os-release to the final report tarball"
+    cp /etc/os-release $INSPECT_DUMP/sys/etc-os-release
 
-  log_info "Copy loaded kernel modules to the final report tarball"
-  lsmod > $INSPECT_DUMP/sys/loaded_kernel_modules
+    log_info "Copy loaded kernel modules to the final report tarball"
+    lsmod > $INSPECT_DUMP/sys/loaded_kernel_modules
 
-  log_info "Copy dmesg entries"
-  dmesg -H > $INSPECT_DUMP/sys/dmesg
+    log_info "Copy dmesg entries"
+    dmesg -H > $INSPECT_DUMP/sys/dmesg
+  else
+    log_info "Copy kernel log entries"
+    journalctl -k &> $INSPECT_DUMP/sys/dmesg
+  fi
 }
 
 function collect_k8s_diagnostics {
@@ -138,10 +163,17 @@ function collect_k8s_diagnostics {
   uname -a &>"$INSPECT_DUMP/uname.log"
 
   log_info "Copy snap diagnostics to the final report tarball"
-  snap version &>"$INSPECT_DUMP/snap-version.log"
-  snap list k8s &>"$INSPECT_DUMP/snap-list-k8s.log"
-  snap services k8s &>"$INSPECT_DUMP/snap-services-k8s.log"
-  snap logs k8s -n $NUM_SNAP_LOG_ENTRIES &>"$INSPECT_DUMP/snap-logs-k8s.log"
+  if is_strict; then
+    # A strictly confined process cannot invoke the 'snap' CLI; use snapctl
+    # and the journal instead.
+    snapctl services &>"$INSPECT_DUMP/snap-services-k8s.log" || true
+    journalctl -n "$NUM_SNAP_LOG_ENTRIES" -u 'snap.k8s.*' &>"$INSPECT_DUMP/snap-logs-k8s.log" || true
+  else
+    snap version &>"$INSPECT_DUMP/snap-version.log"
+    snap list k8s &>"$INSPECT_DUMP/snap-list-k8s.log"
+    snap services k8s &>"$INSPECT_DUMP/snap-services-k8s.log"
+    snap logs k8s -n $NUM_SNAP_LOG_ENTRIES &>"$INSPECT_DUMP/snap-logs-k8s.log"
+  fi
 
   log_info "Copy k8s diagnostics to the final report tarball"
   run_with_timeout "k8s kubectl version &>$INSPECT_DUMP/k8s-version.log"
@@ -150,10 +182,10 @@ function collect_k8s_diagnostics {
   run_with_timeout "k8s kubectl get cm k8sd-config -n kube-system -o yaml &>$INSPECT_DUMP/k8s.k8sd/k8sd-configmap.log"
   run_with_timeout "k8s kubectl get cm -n kube-system &>$INSPECT_DUMP/k8s-configmaps.log"
 
-  cp --no-preserve=mode,ownership /var/snap/k8s/common/var/lib/k8sd/state/database/cluster.yaml "$INSPECT_DUMP/k8s.k8sd/k8sd-cluster.yaml"
-  cp --no-preserve=mode,ownership /var/snap/k8s/common/var/lib/k8sd/state/database/info.yaml "$INSPECT_DUMP/k8s.k8sd/k8sd-info.yaml"
+  cp --no-preserve=mode,ownership "$SNAP_COMMON/var/lib/k8sd/state/database/cluster.yaml" "$INSPECT_DUMP/k8s.k8sd/k8sd-cluster.yaml"
+  cp --no-preserve=mode,ownership "$SNAP_COMMON/var/lib/k8sd/state/database/info.yaml" "$INSPECT_DUMP/k8s.k8sd/k8sd-info.yaml"
 
-  ls -la /var/snap/k8s/common/var/lib/k8sd &>"$INSPECT_DUMP/k8s.k8sd/k8sd-files.log"
+  ls -la "$SNAP_COMMON/var/lib/k8sd" &>"$INSPECT_DUMP/k8s.k8sd/k8sd-files.log"
 }
 
 function collect_service_diagnostics {
@@ -162,24 +194,33 @@ function collect_service_diagnostics {
 
   mkdir -p "$INSPECT_DUMP/$service"
 
-  local status_file
-  status_file="$INSPECT_DUMP/$service/systemctl.log"
-
-  systemctl status "snap.$service" &>"$status_file"
-
-  local n_restarts
-  n_restarts=$(systemctl show "snap.$service" -p NRestarts | cut -d'=' -f2)
-
-  printf -- "%s -> %s\n" "$service" "$n_restarts" >> "$INSPECT_DUMP/nrestarts.log"
-
-  if [ "$n_restarts" -gt 0 ]; then
-    log_warning "Service $service has restarted $n_restarts times due to errors"
-  fi
-
   journalctl -n "$NUM_SNAP_LOG_ENTRIES" -u "snap.$service" &>"$INSPECT_DUMP/$service/journal.log"
+
+  if is_strict; then
+    snapctl services "$service" &>"$INSPECT_DUMP/$service/snapctl.log"
+  else
+    local status_file
+    status_file="$INSPECT_DUMP/$service/systemctl.log"
+
+    systemctl status "snap.$service" &>"$status_file"
+
+    local n_restarts
+    n_restarts=$(systemctl show "snap.$service" -p NRestarts | cut -d'=' -f2)
+
+    printf -- "%s -> %s\n" "$service" "$n_restarts" >> "$INSPECT_DUMP/nrestarts.log"
+
+    if [ "$n_restarts" -gt 0 ]; then
+      log_warning "Service $service has restarted $n_restarts times due to errors"
+    fi
+  fi
 }
 
 function collect_registry_mirror_logs {
+  if is_strict; then
+    # Registry mirrors are host systemd units, which cannot exist under strict.
+    return 0
+  fi
+
   local mirror_units=`systemctl list-unit-files --state=enabled | grep "registry-" | awk '{print $1}'`
   if [ -n "$mirror_units" ]; then
     mkdir -p "$INSPECT_DUMP/mirrors"
@@ -191,6 +232,12 @@ function collect_registry_mirror_logs {
 }
 
 function collect_core_dumps {
+  if is_strict; then
+    # /var/crash is not reachable under strict confinement.
+    log_info "Skipping core dump collection under strict confinement"
+    return 0
+  fi
+
   mkdir -p "$INSPECT_DUMP/core_dumps"
   if [[ -d $CORE_DUMP_DIR && ! -z $(ls -A $CORE_DUMP_DIR) ]]; then
     local dump_dir_size=$(du -sh $CORE_DUMP_DIR)
@@ -207,12 +254,15 @@ function collect_network_diagnostics {
   ip r &>"$INSPECT_DUMP/ip-r.log" || true
   iptables-save &>"$INSPECT_DUMP/iptables.log" || true
   iptables-legacy-save &>"$INSPECT_DUMP/iptables-legacy.log" || true
-  ss -plnt &>"$INSPECT_DUMP/ss-plnt.log" || true
 
   ip6tables-save &>"$INSPECT_DUMP/iptables6.log" || true
   ip6tables-legacy-save &>"$INSPECT_DUMP/iptables6-legacy.log" || true
-  ss -plntu &>"$INSPECT_DUMP/ss-plntu.log" || true
-  grep -Ei "^(HTTP_PROXY|HTTPS_PROXY|NO_PROXY)=" /etc/environment > "$INSPECT_DUMP/proxy_in_etc_environment"
+
+  if ! is_strict; then
+    ss -plnt &>"$INSPECT_DUMP/ss-plnt.log" || true
+    ss -plntu &>"$INSPECT_DUMP/ss-plntu.log" || true
+    grep -Ei "^(HTTP_PROXY|HTTPS_PROXY|NO_PROXY)=" /etc/environment > "$INSPECT_DUMP/proxy_in_etc_environment"
+  fi
 }
 
 function check_expected_services {
