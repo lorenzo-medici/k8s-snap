@@ -1,0 +1,61 @@
+From 5b1c01954eb29e540a9ef740f907123243694264 Mon Sep 17 00:00:00 2001
+From: k8s-snap strict <k8s-snap-strict@canonical.com>
+Date: Tue, 13 Oct 2026 14:03:41 +0300
+Subject: [PATCH] cilium: use the host-visible CNI bin dir spelling under
+ strict
+
+Under strict confinement, kubelet and containerd resolve pod hostPath
+mounts inside the snap's mount namespace, but cilium's init containers
+(install-cni-binaries, apply-sysctl-overwrites) nsenter into the host's
+mount namespace, where the /opt/cni/bin layout is not visible. Point the
+chart's cni.binPath at the layout source under SNAP_COMMON, which exists
+in both namespaces: pods and nsenter see it on the host, containerd sees
+it in-snap as /opt/cni/bin via the layout.
+---
+ pkg/k8sd/features/cilium/network.go | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/pkg/k8sd/features/cilium/network.go b/pkg/k8sd/features/cilium/network.go
+index ab20a1b..373b567 100644
+--- a/pkg/k8sd/features/cilium/network.go
++++ b/pkg/k8sd/features/cilium/network.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"fmt"
+ 	"net"
++	"path/filepath"
+ 	"strings"
+ 
+ 	"github.com/canonical/k8sd/pkg/client/helm"
+@@ -144,6 +145,17 @@ func ApplyNetwork(ctx context.Context, snap snap.Snap, s mctypes.State, apiserve
+ 		bpfValues["vlanBypass"] = config.vlanBPFBypass
+ 	}
+ 
++	// Under strict confinement, kubelet and containerd resolve hostPath
++	// mounts inside the snap's mount namespace, but cilium's init containers
++	// (install-cni-binaries, apply-sysctl-overwrites) nsenter into the host's
++	// mount namespace. The CNI bin directory must therefore be spelled with
++	// its host-visible path, which under strict is the layout source under
++	// SNAP_COMMON (the layout makes it visible as /opt/cni/bin in-snap).
++	cniBinDir := snap.CNIBinDir()
++	if snap.Strict() {
++		cniBinDir = filepath.Join(snap.SnapCommonDir(), "opt", "cni", "bin")
++	}
++
+ 	values := map[string]any{
+ 		"bpf": bpfValues,
+ 		"image": map[string]any{
+@@ -155,8 +167,8 @@ func ApplyNetwork(ctx context.Context, snap snap.Snap, s mctypes.State, apiserve
+ 			"enabled": true,
+ 		},
+ 		"cni": map[string]any{
+-			"confPath":     "/etc/cni/net.d",
+-			"binPath":      "/opt/cni/bin",
++			"confPath":     snap.CNIConfDir(),
++			"binPath":      cniBinDir,
+ 			"exclusive":    config.cniExclusive,
+ 			"chainingMode": "portmap",
+ 		},
+-- 
+2.43.0
+
