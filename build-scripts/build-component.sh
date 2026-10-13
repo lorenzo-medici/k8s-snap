@@ -27,7 +27,21 @@ if [ -d "${COMPONENT_BUILD_DIRECTORY}" ]; then
 fi
 
 if [ ! -d "${COMPONENT_BUILD_DIRECTORY}" ]; then
-  git clone "${GIT_REPOSITORY}" --depth 1 -b "${GIT_TAG}" "${COMPONENT_BUILD_DIRECTORY}"
+  if [[ "${GIT_TAG}" =~ ^[0-9a-f]{40}$ ]]; then
+    # Pinned to a full commit SHA (e.g. k8sd, which tracks no tag): clone -b
+    # cannot take a SHA, so fetch it directly. Requires the remote to allow
+    # reachable SHA fetches (GitHub does).
+    mkdir -p "${COMPONENT_BUILD_DIRECTORY}"
+    (
+      cd "${COMPONENT_BUILD_DIRECTORY}"
+      git init -q
+      git remote add origin "${GIT_REPOSITORY}"
+      git fetch -q --depth 1 origin "${GIT_TAG}"
+      git checkout -q FETCH_HEAD
+    )
+  else
+    git clone "${GIT_REPOSITORY}" --depth 1 -b "${GIT_TAG}" "${COMPONENT_BUILD_DIRECTORY}"
+  fi
 fi
 
 cd "${COMPONENT_BUILD_DIRECTORY}"
