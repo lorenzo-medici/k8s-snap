@@ -1,4 +1,4 @@
-From 64a93e4fae6ff6571402c3feb0f067c7678dbabb Mon Sep 17 00:00:00 2001
+From d25265d57a60407c866f9e06327c423d6897cdd0 Mon Sep 17 00:00:00 2001
 From: k8s-snap strict <k8s-snap-strict@canonical.com>
 Date: Tue, 13 Oct 2026 10:03:04 +0300
 Subject: [PATCH] strict: flavor patch
@@ -15,8 +15,8 @@ Subject: [PATCH] strict: flavor patch
 - connect-plug-* symlinks to configure for every declared plug
 - remove k8s/pebble (host systemd supervision flavor, classic-only)
 ---
- k8s/pebble/000-k8s.yaml                       |  53 -----
- k8s/pebble/pebble.service                     |  27 ---
+ k8s/pebble/000-k8s.yaml                       |  53 ---
+ k8s/pebble/pebble.service                     |  27 --
  snap/hooks/connect-plug-cifs-mount            |   1 +
  snap/hooks/connect-plug-cilium-module-load    |   1 +
  snap/hooks/connect-plug-docker-privileged     |   1 +
@@ -44,8 +44,8 @@ Subject: [PATCH] strict: flavor patch
  snap/hooks/connect-plug-opengl                |   1 +
  snap/hooks/connect-plug-process-control       |   1 +
  snap/hooks/connect-plug-system-observe        |   1 +
- snap/snapcraft.yaml                           | 219 +++++++++++++++++-
- 30 files changed, 241 insertions(+), 85 deletions(-)
+ snap/snapcraft.yaml                           | 381 +++++++++++++++++-
+ 30 files changed, 403 insertions(+), 85 deletions(-)
  delete mode 100644 k8s/pebble/000-k8s.yaml
  delete mode 100644 k8s/pebble/pebble.service
  create mode 120000 snap/hooks/connect-plug-cifs-mount
@@ -385,7 +385,7 @@ index 00000000..cabc7046
 +configure
 \ No newline at end of file
 diff --git a/snap/snapcraft.yaml b/snap/snapcraft.yaml
-index 93333818..597ac799 100644
+index 93333818..6422eccf 100644
 --- a/snap/snapcraft.yaml
 +++ b/snap/snapcraft.yaml
 @@ -7,7 +7,8 @@ description: |-
@@ -517,7 +517,7 @@ index 93333818..597ac799 100644
    containerd:
      command: k8s/wrappers/services/containerd
      daemon: notify
-@@ -288,43 +381,159 @@ apps:
+@@ -288,43 +381,321 @@ apps:
      restart-condition: always
      start-timeout: 5m
      before: [kubelet]
@@ -678,6 +678,168 @@ index 93333818..597ac799 100644
 +      - network-bind
 +      - network-control
 +      - process-control
++  connect-plug-cifs-mount:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-cilium-module-load:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-docker-privileged:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-docker-unprivileged:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-firewall-control:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-fuse-support:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-hardware-observe:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-home:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-home-read-all:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-k8s-audit-log:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-k8s-etc:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-k8s-etc-ro:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-k8s-kubeproxy:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-k8s-sysctl:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-kernel-crypto-api:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-kernel-module-observe:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-kubernetes-support:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-log-observe:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-login-session-observe:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-mount-observe:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-network:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-network-bind:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-network-control:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-network-observe:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-opengl:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-process-control:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
++  connect-plug-system-observe:
++    plugs:
++      - k8s-sysctl
++      - network
++      - network-bind
++      - network-control
 -- 
 2.43.0
 
