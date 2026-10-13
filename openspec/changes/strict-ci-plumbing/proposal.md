@@ -25,5 +25,4 @@ until the substrate matrix passes on them.
 
 ## Implementation status
 
-In progress (delegated implementation; this file will be updated when the
-workflow edits land).
+Implemented and committed (`c54954ac`).

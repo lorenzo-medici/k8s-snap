@@ -32,5 +32,4 @@ need the connect-interfaces flow before the snap becomes healthy.
 
 ## Implementation status
 
-In progress (delegated implementation; this file will be updated when the
-doc edits land).
+Implemented and committed (`2e74a090`, `3c861a4b`, `5b1ede65`).
