@@ -1,6 +1,6 @@
-From 5b1c01954eb29e540a9ef740f907123243694264 Mon Sep 17 00:00:00 2001
+From 76869ac80c9f18a4d8d770444ccec1f4ad42974c Mon Sep 17 00:00:00 2001
 From: k8s-snap strict <k8s-snap-strict@canonical.com>
-Date: Tue, 13 Oct 2026 14:03:41 +0300
+Date: Tue, 13 Oct 2026 14:17:55 +0300
 Subject: [PATCH] cilium: use the host-visible CNI bin dir spelling under
  strict
 
@@ -11,9 +11,15 @@ mount namespace, where the /opt/cni/bin layout is not visible. Point the
 chart's cni.binPath at the layout source under SNAP_COMMON, which exists
 in both namespaces: pods and nsenter see it on the host, containerd sees
 it in-snap as /opt/cni/bin via the layout.
+
+Add SnapCommonDir() to the snap interface (and the mock) to expose the
+common directory instead of hardcoding /var/snap/k8s/common.
 ---
  pkg/k8sd/features/cilium/network.go | 16 ++++++++++++++--
- 1 file changed, 14 insertions(+), 2 deletions(-)
+ pkg/snap/interface.go               |  1 +
+ pkg/snap/mock/mock.go               |  5 +++++
+ pkg/snap/snap.go                    |  4 ++++
+ 4 files changed, 24 insertions(+), 2 deletions(-)
 
 diff --git a/pkg/k8sd/features/cilium/network.go b/pkg/k8sd/features/cilium/network.go
 index ab20a1b..373b567 100644
@@ -56,6 +62,56 @@ index ab20a1b..373b567 100644
  			"exclusive":    config.cniExclusive,
  			"chainingMode": "portmap",
  		},
+diff --git a/pkg/snap/interface.go b/pkg/snap/interface.go
+index 45ff76c..9af639a 100644
+--- a/pkg/snap/interface.go
++++ b/pkg/snap/interface.go
+@@ -38,6 +38,7 @@ type Snap interface {
+ 
+ 	CNIConfDir() string       // /etc/cni/net.d
+ 	CNIBinDir() string        // /opt/cni/bin
++	SnapCommonDir() string    // the snap's writable common directory, e.g. /var/snap/k8s/common
+ 	CNIPluginsBinary() string // /snap/k8s/current/bin/cni
+ 	CNIPlugins() []string     // cni plugins built into the cni binary
+ 
+diff --git a/pkg/snap/mock/mock.go b/pkg/snap/mock/mock.go
+index f64f9cd..588b12a 100644
+--- a/pkg/snap/mock/mock.go
++++ b/pkg/snap/mock/mock.go
+@@ -31,6 +31,7 @@ type Mock struct {
+ 	SystemMinConfig             map[string]string
+ 	CNIConfDir                  string
+ 	CNIBinDir                   string
++	SnapCommonDir               string
+ 	CNIPlugins                  []string
+ 	CNIPluginsBinary            string
+ 	ContainerdConfigDir         string
+@@ -246,6 +247,10 @@ func (s *Snap) CNIBinDir() string {
+ 	return s.Mock.CNIBinDir
+ }
+ 
++func (s *Snap) SnapCommonDir() string {
++	return s.Mock.SnapCommonDir
++}
++
+ func (s *Snap) CNIPluginsBinary() string {
+ 	return s.Mock.CNIPluginsBinary
+ }
+diff --git a/pkg/snap/snap.go b/pkg/snap/snap.go
+index a0a778b..f078276 100644
+--- a/pkg/snap/snap.go
++++ b/pkg/snap/snap.go
+@@ -256,6 +256,10 @@ func (s *snap) CNIPluginsBinary() string {
+ 	return filepath.Join(s.snapDir, "bin", "cni")
+ }
+ 
++func (s *snap) SnapCommonDir() string {
++	return s.snapCommonDir
++}
++
+ func (s *snap) CNIPlugins() []string {
+ 	return []string{
+ 		"dhcp",
 -- 
 2.43.0
 
