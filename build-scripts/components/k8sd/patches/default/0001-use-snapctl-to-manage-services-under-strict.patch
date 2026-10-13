@@ -1,6 +1,6 @@
-From 489cd76436eebdf1f77115e9c30d20504a7b0664 Mon Sep 17 00:00:00 2001
+From 8808667b25ee0d9258f516d53b59a5fdaa3c55af Mon Sep 17 00:00:00 2001
 From: k8s-snap strict <k8s-snap-strict@canonical.com>
-Date: Tue, 13 Oct 2026 11:56:40 +0300
+Date: Tue, 13 Oct 2026 12:40:07 +0300
 Subject: [PATCH] snap: use snapctl to manage services under strict confinement
 
 The snap CLI is AppArmor-denied inside a strictly confined snap (it
@@ -13,14 +13,14 @@ services, including the --enable/--disable flags k8sd passes.
  1 file changed, 7 insertions(+)
 
 diff --git a/pkg/snap/snap.go b/pkg/snap/snap.go
-index a0a778b..53bd422 100644
+index a0a778b..d7c36b8 100644
 --- a/pkg/snap/snap.go
 +++ b/pkg/snap/snap.go
 @@ -77,6 +77,13 @@ func NewSnap(opts SnapOpts) *snap {
  // buildServiceCommand creates a snap command for managing services.
  func (s *snap) buildServiceCommand(action string, names []string, extraSnapArgs ...string) []string {
  	cmd := []string{"snap", action}
-+	if s.strict {
++	if s.Strict() {
 +		// The snap CLI is not usable from within a strictly confined snap:
 +		// it is present but AppArmor-denied (it requires the snapd-control
 +		// interface). snapctl is permitted for managing the snap's own
