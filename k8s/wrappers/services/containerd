@@ -8,7 +8,10 @@ k8s::common::setup_env
 [ ! -z "${XDG_RUNTIME_DIR:=}" ] && mkdir -p "${XDG_RUNTIME_DIR}"
 
 # Apply apparmor profile for "cri-containerd.apparmor.d"
-if ! apparmor_parser -r "$SNAP/k8s/profiles/containerd"; then
+# (absolute path: /sbin is a symlink to usr/sbin on merged-usr, and under
+# strict confinement PATH deliberately excludes both to avoid AppArmor
+# directory-list denials from kubectl's plugin discovery)
+if ! /usr/sbin/apparmor_parser -r "$SNAP/k8s/profiles/containerd"; then
   echo "
 
 WARNING: Failed to configure the 'cri-containerd.apparmor.d' AppArmor profile.
