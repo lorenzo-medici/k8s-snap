@@ -15,7 +15,7 @@ resources/
   configurations/    audit policies, pod security configs, DISA-STIG bootstrap templates
 scripts/             install/remove helper scripts (inspect.sh, etc.)
 hack/                low-level init helpers (connect-interfaces.sh, init.sh, …)
-pebble/              pebble layer config for service supervision
+pebble/              pebble layer config for service supervision (classic-only; excluded from the strict build)
 profiles/            containerd base profile
 systemd/             containerd systemd drop-in defaults
 ```
@@ -26,9 +26,9 @@ All functions are namespaced `k8s::<category>::<name>`. Never define bare functi
 
 | Namespace | Purpose |
 |-----------|---------|
-| `k8s::common::*` | env setup, FIPS check, env validation, snap confinement detection |
+| `k8s::common::*` | env setup, FIPS check, env validation, snap confinement detection, interface health gate (required_interfaces, check_snap_interfaces) |
 | `k8s::cmd::*` | thin wrappers: `kubectl`, `ctr`, `k8s`, `hostname` |
-| `k8s::util::*` | system helpers: default interface, kernel module loading, wait loops |
+| `k8s::util::*` | system helpers: default interface, kernel module loading, wait loops, run_with_sudo, apply_sysctl_tuning |
 | `k8s::remove::*` | cleanup hooks invoked during `snap remove` |
 | `k8s::init::*` | bootstrap helpers (k8sd single-node init) |
 | `k8s::kubelet::*` | kubelet-specific setup (shared root dir) |

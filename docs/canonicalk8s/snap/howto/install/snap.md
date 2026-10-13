@@ -65,6 +65,43 @@ The snap can be installed with the snap command:
 sudo snap install k8s --classic --channel=1.36-classic/stable
 -->
 
+### Install the strict flavor (optional)
+
+The `k8s` snap is also available as a `strict` flavor, which runs under
+strict confinement: every permission is granted explicitly through snapd
+interfaces. Install it from the same track without `--classic`:
+
+```
+sudo snap install k8s --channel=1.36/stable
+```
+
+```{note}
+The strict flavor is being introduced with the 1.36 tracks on the bare
+channel scheme (`1.36/stable`); until then the published channels are
+`1.xx-classic/<risk>`. See the [channels page] for details.
+```
+
+Under strict confinement the snap's services stay disabled until every
+required interface is connected. Connect them with the shipped helper
+script (it derives the set from the snap itself):
+
+```
+sudo /snap/k8s/current/k8s/hack/connect-interfaces.sh
+```
+
+Check that all interfaces are connected and that the snap reports healthy:
+
+```
+snap connections k8s
+snap info --verbose k8s
+```
+
+The `health` field should show `okay` (until all plugs are connected it
+shows `blocked` and names the missing ones). A few interfaces
+(`docker-support`, the `system-files` grants, `home` with `read: all` and
+`kernel-module-load`) are super-privileged and additionally require Snap
+Store approval.
+
 ## Bootstrap the cluster
 
 Installing the snap sets up all the parts required to run Kubernetes. The next

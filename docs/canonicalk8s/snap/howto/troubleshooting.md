@@ -15,6 +15,16 @@ troubleshoot your {{product}} cluster.
 
 First ensure that all the cluster components are up and in a healthy state.
 
+```{note}
+Under the `strict` confinement flavor, use `sudo snap logs -n=all
+k8s.<service>` (or `journalctl -u snap.k8s.<service>`) instead of
+`journalctl -u k8s.<service>`, and look under `/var/snap/k8s/common/` for
+paths such as `/var/lib/kubelet` and the pod logs, which are relocated
+there from their classic locations. If the snap reports `blocked` in
+`snap info --verbose k8s`, connect the missing interfaces listed there
+first.
+```
+
 ### Check the cluster status
 
 Verify that the cluster status is ready by running the following command:

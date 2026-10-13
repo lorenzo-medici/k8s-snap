@@ -43,5 +43,14 @@ Uses `go/<version>-fips/stable` for all Go component builds. FIPS mode is a firs
 
 ## Snap Channels
 
-Channel format: `{major}.{minor}-{flavor}/{risk}`, e.g. `1.36-classic/stable`.
+Channel format (since 1.36, D9): bare `{major}.{minor}/{risk}`, e.g. `1.36/stable` — both
+flavors publish on the same track; `classic` is the default flavor. Earlier tracks were
+flavor-suffixed (`1.35-classic/stable`, `1.35-strict/stable`).
 Flavors: `classic` (default), `strict`. Risk levels (ascending): `stable`, `candidate`, `beta`, `edge`.
+
+## Flavors
+
+The strict flavor is a build-time transformation of this tree:
+`build-scripts/patches/strict/apply` applies `0001-strict.patch` (confinement, plugs,
+layouts, hook plugs) before `snapcraft --use-lxd` runs. All runtime differences live on
+the classic branch behind `k8s::common::is_strict` ([k8s/lib.sh](k8s/lib.sh)).

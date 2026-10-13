@@ -170,6 +170,13 @@ repeat_checks "sudo k8s kubectl get nodes" "Ready"
 sudo test -f /var/log/kubernetes/audit.log
 -->
 
+```{note}
+Under the `strict` confinement flavor the audit log stays at
+`/var/log/kubernetes/audit.log` on the host, granted by the
+`k8s-audit-log` `system-files` interface (which must be connected), so the
+assertions above keep working unchanged.
+```
+
 #### Set event rate limits
 
 ```{note}
