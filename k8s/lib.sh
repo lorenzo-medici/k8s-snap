@@ -344,9 +344,12 @@ k8s::init::k8sd() {
 k8s::kubelet::ensure_shared_root_dir() {
   k8s::common::setup_env
 
-  if ! findmnt -o PROPAGATION /var/lib/kubelet -n | grep -q shared; then
+  if k8s::common::is_strict; then
     echo "Ensure /var/lib/kubelet mount propagation is rshared"
-    mount -o remount --make-rshared "$SNAP_COMMON/var/lib/kubelet" /var/lib/kubelet
+    # /var/lib/kubelet is a layout bind of $SNAP_COMMON/var/lib/kubelet;
+    # the propagation change must target the mount point itself (verified:
+    # the two-arg remount form is denied by the kubernetes-support rules).
+    mount --make-rshared /var/lib/kubelet
   fi
 }
 
