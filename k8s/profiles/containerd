@@ -40,4 +40,8 @@ profile cri-containerd.apparmor.d flags=(attach_disconnected,mediate_deleted) {
   signal (receive) peer=snap.k8s.k8sd,
   signal (receive) peer=snap.k8s.k8s,
   signal (receive) peer=snap.k8s.hook.remove,
+
+  # Cover signalling across the transition into the //&unconfined child profile.
+  # Missing signal rules surface as pods failing to delete.
+  signal (send,receive) peer=cri-containerd.apparmor.d//&unconfined,
 }

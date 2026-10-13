@@ -21,9 +21,21 @@ You can try to apply the profile manually by running:
 "
 fi
 
-# Re-exec outside of apparmor confinement
-if [ -d /sys/kernel/security/apparmor ] && [ "$(cat /proc/self/attr/current)" != "unconfined" ]; then
-    exec aa-exec -p unconfined -- "$0" "$@"
+if k8s::common::is_strict; then
+  # Mirror the classic systemd drop-in (k8s/systemd/containerd-defaults.conf):
+  # - Delegate=yes comes from the docker-support interface under strict
+  # - the Limit* values become ulimits here (best-effort)
+  # - OOMScoreAdjust becomes a /proc/self/oom_score_adj write
+  # - TasksMax has no strict equivalent (tracked as a porting requirement)
+  ulimit -n unlimited 2>/dev/null || ulimit -n 65536 || true
+  ulimit -u unlimited 2>/dev/null || true
+  ulimit -c unlimited 2>/dev/null || true
+  echo -999 > /proc/self/oom_score_adj 2>/dev/null || true
+else
+  # Re-exec outside of apparmor confinement
+  if [ -d /sys/kernel/security/apparmor ] && [ "$(cat /proc/self/attr/current)" != "unconfined" ]; then
+      exec aa-exec -p unconfined -- "$0" "$@"
+  fi
 fi
 
 k8s::common::execute containerd
