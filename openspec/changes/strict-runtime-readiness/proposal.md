@@ -39,5 +39,5 @@ strict. The MicroK8s blueprint shows each piece needs an `is_strict` branch.
 
 ## Implementation status
 
-Implemented and committed on `release-1.36` (commits `d669da75`,
+Implemented and committed on `dev-1.36-strict` (commits `d669da75`,
 `9981cdeb`, `7c82ebb2`, `c5bbc47b`, `25fcc231`, `7eb2dff1`).

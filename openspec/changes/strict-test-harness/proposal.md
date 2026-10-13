@@ -27,6 +27,6 @@ relocates containerd state into `$SNAP_COMMON`.
 
 ## Implementation status
 
-Implemented and committed on `release-1.36`: `a26aedcc`, `142879a5`,
+Implemented and committed on `dev-1.36-strict`: `a26aedcc`, `142879a5`,
 `e0262734`, `199c1b9b`. Test collection passes (9 tests across the three
 touched files).

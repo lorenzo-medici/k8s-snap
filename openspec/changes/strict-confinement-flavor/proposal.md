@@ -60,6 +60,6 @@ Build + install + connect smoke tests in an LXD container surfaced and fixed:
 
 ## Implementation status
 
-Implemented and committed on `release-1.36`: `6f647013`, `c271f3fe`,
+Implemented and committed on `dev-1.36-strict`: `6f647013`, `c271f3fe`,
 `51c8e1e5`, `42e0c655`, `b8654fbd`, `196868ba`, `36927064`, `bb3816c5`,
 `ca338469`, `9dbf7523`, plus the k8sd component patch commit.
