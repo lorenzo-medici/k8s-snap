@@ -1,4 +1,4 @@
-From 1ac4b94fa3548d3b81bdb4b21c6fe9ed33dee873 Mon Sep 17 00:00:00 2001
+From 89968b07e15cd916edcc122be61662029d02b948 Mon Sep 17 00:00:00 2001
 From: k8s-snap strict <k8s-snap-strict@canonical.com>
 Date: Tue, 13 Oct 2026 10:03:04 +0300
 Subject: [PATCH] strict: flavor patch
@@ -44,8 +44,8 @@ Subject: [PATCH] strict: flavor patch
  snap/hooks/connect-plug-opengl                |   1 +
  snap/hooks/connect-plug-process-control       |   1 +
  snap/hooks/connect-plug-system-observe        |   1 +
- snap/snapcraft.yaml                           | 409 +++++++++++++++++-
- 30 files changed, 418 insertions(+), 98 deletions(-)
+ snap/snapcraft.yaml                           | 414 +++++++++++++++++-
+ 30 files changed, 423 insertions(+), 98 deletions(-)
  delete mode 100644 k8s/pebble/000-k8s.yaml
  delete mode 100644 k8s/pebble/pebble.service
  create mode 120000 snap/hooks/connect-plug-cifs-mount
@@ -385,7 +385,7 @@ index 00000000..cabc7046
 +configure
 \ No newline at end of file
 diff --git a/snap/snapcraft.yaml b/snap/snapcraft.yaml
-index 93333818..b8159755 100644
+index 93333818..10b2b177 100644
 --- a/snap/snapcraft.yaml
 +++ b/snap/snapcraft.yaml
 @@ -7,7 +7,8 @@ description: |-
@@ -398,7 +398,7 @@ index 93333818..b8159755 100644
  # Note(ben): Snapcraft does not expose its base for part builds, so we need to set it manually.
  # Feature request tracked in https://github.com/canonical/snapcraft/issues/5614
  # For now, remember to also update OPENSSL_MODULES and etcd part BASE when bumping this version.
-@@ -16,9 +17,11 @@ environment:
+@@ -16,9 +17,16 @@ environment:
    REAL_PATH: $PATH
    REAL_LD_LIBRARY_PATH: $LD_LIBRARY_PATH
    CRAFT_ARCH_TRIPLET_BUILD_FOR: $CRAFT_ARCH_TRIPLET_BUILD_FOR
@@ -410,10 +410,15 @@ index 93333818..b8159755 100644
 +  OPENSSL_MODULES: /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/ossl-modules-3/
 +  # nano is staged in the snap; set it as the editor so 'kubectl edit' works
 +  EDITOR: $SNAP/bin/nano
++  # Override snapd's default PATH: /usr/sbin and /usr/games are not listable
++  # under the generated AppArmor profiles, and kubectl's plugin discovery
++  # probes every PATH entry (harmless but noisy denials). apparmor_parser
++  # resolves via the /sbin -> usr/sbin symlink instead.
++  PATH: $SNAP/usr/sbin:$SNAP/usr/bin:$SNAP/sbin:$SNAP/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/sbin:/bin
  
  architectures:
    - build-on: [amd64]
-@@ -26,12 +29,87 @@ architectures:
+@@ -26,12 +34,87 @@ architectures:
    - build-on: [ppc64el]
    - build-on: [s390x]
  
@@ -502,7 +507,7 @@ index 93333818..b8159755 100644
      build-packages:
        - sudo
        - autoconf
-@@ -67,7 +145,7 @@ parts:
+@@ -67,7 +150,7 @@ parts:
      - BASE: core22  # Note: This field must match the base field above.
      - BIN: $CRAFT_STAGE/bin/etcd
      override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh etcd
@@ -511,7 +516,7 @@ index 93333818..b8159755 100644
      override-prime: |-
        # D10: under strict confinement the base snap is the rootfs, so the
        # unpatched ELF interpreter is already correct. Same test as
-@@ -92,7 +170,7 @@ parts:
+@@ -92,7 +175,7 @@ parts:
  
    k8sd:
      source: build-scripts/components/k8sd
@@ -520,7 +525,7 @@ index 93333818..b8159755 100644
      plugin: nil
      override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh k8sd
  
-@@ -100,14 +178,14 @@ parts:
+@@ -100,14 +183,14 @@ parts:
      after: [build-deps]
      plugin: nil
      source: build-scripts/components/cni
@@ -537,7 +542,7 @@ index 93333818..b8159755 100644
      override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh kubernetes
  
    kubernetes-version:
-@@ -117,7 +195,7 @@ parts:
+@@ -117,7 +200,7 @@ parts:
  
    helm:
      after: [build-deps]
@@ -546,7 +551,7 @@ index 93333818..b8159755 100644
      plugin: nil
      source: build-scripts/components/helm
      override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh helm
-@@ -126,7 +204,7 @@ parts:
+@@ -126,7 +209,7 @@ parts:
      after: [build-deps]
      plugin: autotools
      source: https://www.netfilter.org/pub/libmnl/libmnl-1.0.4.tar.bz2
@@ -555,7 +560,7 @@ index 93333818..b8159755 100644
      prime:
        - -usr/local/include
  
-@@ -134,7 +212,7 @@ parts:
+@@ -134,7 +217,7 @@ parts:
      after: [libmnl]
      plugin: autotools
      source: https://www.netfilter.org/projects/libnftnl/files/libnftnl-1.1.8.tar.bz2
@@ -564,7 +569,7 @@ index 93333818..b8159755 100644
      build-environment:
        - LIBMNL_LIBS: $CRAFT_STAGE/usr/lib
      prime:
-@@ -144,7 +222,7 @@ parts:
+@@ -144,7 +227,7 @@ parts:
      after: [libnftnl]
      source: https://www.netfilter.org/projects/iptables/files/iptables-1.8.6.tar.bz2
      plugin: autotools
@@ -573,7 +578,7 @@ index 93333818..b8159755 100644
      build-environment:
        - LIBMNL_LIBS: $CRAFT_STAGE/usr/lib
        - LIBNFTNL_LIBS: $CRAFT_STAGE/usr/lib
-@@ -165,7 +243,7 @@ parts:
+@@ -165,7 +248,7 @@ parts:
      override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh containerd
      build-environment:
      - BASE: core22  # Note: This field must match the base field above.
@@ -582,7 +587,7 @@ index 93333818..b8159755 100644
      override-prime: |-
        # D10: under strict confinement the base snap is the rootfs, so the
        # unpatched ELF interpreter is already correct. Same test as
-@@ -193,13 +271,13 @@ parts:
+@@ -193,13 +276,13 @@ parts:
    runc:
      after: [iptables, build-deps]
      plugin: nil
@@ -598,7 +603,7 @@ index 93333818..b8159755 100644
      stage-packages:
        - conntrack
        - coreutils
-@@ -245,7 +323,7 @@ parts:
+@@ -245,7 +328,7 @@ parts:
    k8s:
      plugin: nil
      source: k8s
@@ -607,7 +612,7 @@ index 93333818..b8159755 100644
      override-build: |
        rm $CRAFT_PART_INSTALL/k8s -rf
        cp --archive --link --no-dereference . $CRAFT_PART_INSTALL/k8s
-@@ -278,6 +356,23 @@ parts:
+@@ -278,6 +361,23 @@ parts:
  apps:
    k8s:
      command: k8s/wrappers/commands/k8s
@@ -631,7 +636,7 @@ index 93333818..b8159755 100644
    containerd:
      command: k8s/wrappers/services/containerd
      daemon: notify
-@@ -288,43 +383,321 @@ apps:
+@@ -288,43 +388,321 @@ apps:
      restart-condition: always
      start-timeout: 5m
      before: [kubelet]
