@@ -43,6 +43,13 @@ This will display a list of commands possible with `kubectl`.
 `/etc/kubernetes/kubelet.conf` on worker nodes. Therefore, on worker 
 nodes the `k8s kubectl` command has significantly fewer permissions.
 
+> **Note**: Under the `strict` confinement flavor these `/etc/kubernetes`
+> paths remain host-visible through the `k8s-etc` `system-files` interface
+> (which must be connected). Paths owned by the base snap (for example
+> `/var/lib/kubelet` and pod logs) are relocated under
+> `/var/snap/k8s/common/` via layouts and are not visible on the host at
+> their in-snap locations.
+
 The format of `kubectl` commands are:
 
 ```

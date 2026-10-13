@@ -555,4 +555,12 @@ Extra configuration for the containerd config.toml
 **Type:** `string`<br>
 
 The base directory in which the containerd-related files are located.
+This option only takes effect when the node is initialized, i.e. during
+`k8s bootstrap` or `k8s join-cluster`; it cannot be changed afterwards.
+
+```{note}
+Under the `strict` confinement flavor a custom base directory is not
+supported: the confined snap can only reach paths within its own writable
+areas, so containerd files must remain under `/var/snap/k8s/common/`.
+```
 

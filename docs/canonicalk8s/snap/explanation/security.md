@@ -22,9 +22,20 @@ of {{product}}, but links for further reading are provided.
 Keeping up to date with the latest security patches is one of the most
 effective ways to keep your cluster secure. Deploying {{product}} as a snap
 allows our users to automatically consume the latest security patches with snap
-refreshes taking place several times a day. The `k8s` snap is deployed with
-`classic`confinement meaning that the snap has access to system resources in
-order to be able to deploy the cluster successfully. See the
+refreshes taking place several times a day. The `k8s` snap is available in two
+confinement flavors. The default `classic` flavor runs with `classic`
+confinement, meaning that the snap has access to system resources in order to
+be able to deploy the cluster successfully. The `strict` flavor runs under
+strict confinement instead: every permission the snap needs is granted
+explicitly through snapd interfaces. Until all required interface plugs are
+connected, the snap's services stay disabled and a configure-hook health gate
+reports the snap as `blocked`; `snap connections k8s` lists the plugs and
+`snap info --verbose k8s` shows the health status. Some of these interfaces
+(such as `docker-support`, `system-files`, `home` with `read: all` and
+`kernel-module-load`) are super-privileged and require Snap Store approval.
+Under strict confinement the `docker-support` interface also contributes the
+`Delegate=true` systemd property to the snap's services, replacing the systemd
+drop-in used by the classic flavor. See the
 [Snapcraft documentation] for more
 information on confinement levels and security in snaps.
 

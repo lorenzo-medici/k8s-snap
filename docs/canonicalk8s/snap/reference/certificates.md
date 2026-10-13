@@ -9,6 +9,15 @@ myst:
 This reference page provides an overview of certificate authorities (CAs),
 certificates and configuration directories in use by a {{ product }} cluster.
 
+```{note}
+Under the `strict` confinement flavor, the `/etc/kubernetes` paths listed on
+this page remain host-visible through the `k8s-etc` `system-files` interface
+(which must be connected). Paths owned by the base snap — for example
+`/var/lib/kubelet` and the pod log directories `/var/log/pods` and
+`/var/log/containers` — are relocated under `/var/snap/k8s/common/` via
+layouts and are not visible on the host at their in-snap locations.
+```
+
 ## Certificate Authorities (CAs)
 
 This table outlines the common certificate authorities (CAs) used in a

@@ -20,6 +20,12 @@ network environment, such access is usually controlled through proxies.
 
 ## Adding proxy configuration for the k8s snap
 
+```{note}
+The systemd drop-in approach described in this section applies to the
+`classic` flavor only. For the `strict` flavor, see
+[Strict confinement](#strict-confinement) below.
+```
+
 If necessary, create the `snap.k8s.containerd.service.d` directory:
 
 ```
@@ -72,6 +78,34 @@ Include the CIDRs **10.152.183.0/24** and **10.1.0.0/16** in both the
 Kubernetes service and pod CIDRs, respectively. If you are using different
 service or pod CIDRs, update this setting accordingly.
 ```
+
+### Strict confinement
+
+A strictly confined snap cannot consume systemd drop-ins, so under the
+`strict` flavor the proxy is configured through the service's environment
+file instead. Set the proxy variables in
+`/var/snap/k8s/common/args/<service>-env` (one `KEY=value` pair per line).
+For example, for `containerd`:
+
+```
+sudo tee -a /var/snap/k8s/common/args/containerd-env <<EOF
+HTTPS_PROXY=http://proxy.internal:3128
+HTTP_PROXY=http://proxy.internal:3128
+NO_PROXY=10.1.0.0/16,10.152.183.0/24,192.168.0.0/16,127.0.0.1,172.16.0.0/12
+https_proxy=http://proxy.internal:3128
+http_proxy=http://proxy.internal:3128
+no_proxy=10.1.0.0/16,10.152.183.0/24,192.168.0.0/16,127.0.0.1,172.16.0.0/12
+EOF
+```
+
+Restart the service for the settings to take effect:
+
+```
+sudo snap restart k8s.containerd
+```
+
+Under strict confinement, use `sudo snap logs -n=all k8s.containerd` rather
+than `journalctl` when debugging the service.
 
 ## Adding proxy configuration for the k8s charms
 
