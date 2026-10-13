@@ -8,10 +8,12 @@ Every component lives under `build-scripts/components/<name>/`:
 
 ```
 repository       upstream git URL to clone
-version          tag or commit to build
+version          tag or commit to build (a full 40-char SHA pins an exact commit)
 build.sh         build script, called as: build.sh <output_dir> <version>
 pre-patch.sh     optional hook run before patches are applied
 patches/         version-tagged patch directories; optional (see below)
+strict-patches/  extra patch directories applied only for strictly confined builds
+                 (same rules as patches/, applied after them); optional
 ```
 
 Entry point is `build-component.sh <name>`, which: clones the repo at `version`, runs
@@ -31,6 +33,13 @@ Resolution algorithm: find the most recent directory whose version is `<=` the b
 Extra semver labels (e.g. `-beta.0`) are stripped before comparison, but exact-match entries
 take priority. A non-semver `version` value (e.g. a branch name) falls back to `default/` if
 that directory exists; otherwise no patches are applied.
+
+`strict-patches/` follows the same layout and resolution rules and is applied **after**
+`patches/`, only when `snap/snapcraft.yaml` declares `confinement: strict` (the strict
+flavor applies `build-scripts/patches/strict/apply` first — see "Flavors" in the repo
+`AGENTS.md`). Currently only `runc` carries strict patches (the AppArmor
+change-profile series a confined container runtime needs). Multi-patch series are
+applied in sorted filename order, so number them (`0001-…`, `0002-…`, …).
 
 To verify which patches would apply before building:
 

@@ -22,13 +22,18 @@ build-scripts/
                                         the component patches
             patches/                <-- list of patches to apply after checkout (see section below)
                 ...
+            strict-patches/         <-- list of extra patches to apply when building the
+                                        strictly confined snap (see section below)
+                ...
 ```
 
 ## Applying patches
 
-Most K8s components are retrieved from an upstream source (specified in the `repository`), with a specific tag (specified in `version`), have some patches applied to them (from the `patches/` directory) and are then built (using `build.sh`).
+Most K8s components are retrieved from an upstream source (specified in the `repository`), with a specific tag (specified in `version`), have some patches applied to them (from the `patches/` directory, plus the `strict-patches/` directory when the snap is built with `confinement: strict`) and are then built (using `build.sh`).
 
-This section explains the directory format for the `patches` directory.
+This section explains the directory format for the `patches` directory. The same rules
+apply for `strict-patches`, which are applied **after** `patches` (currently only runc
+has strict patches: the AppArmor change-profile series required for confined snaps).
 
 Our patches do not frequently change between versions, but they do have to be rebased from time to time, which breaks compatibility with older versions. For that reason, we maintain a set of patches for each version that introduces a breaking change. Consider the following directory structure for the Kubernetes component.
 
