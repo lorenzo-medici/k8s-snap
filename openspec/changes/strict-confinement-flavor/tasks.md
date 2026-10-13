@@ -33,7 +33,8 @@
 - [x] Fix 7: kubelet `make-rshared` targets the layout mount point; the two-arg remount form is denied (`b58e372d`)
 - [x] Fix 8: all parts flipped to `no-patchelf` — snapcraft's patchelf retargets to `/snap/core22/current`, denied under strict (`5d893f9a`)
 - [x] Fix 9: k8sd cilium patch — `cni.binPath` spelled host-visible under strict (nsenter init containers)
-- [x] Fix 10: k8sd `RunningServiceArgs` — /proc argv[0] fallback under strict (systemctl denied; fixes `k8s status` readiness and the args-drift controller)
+- [x] Fix 10: k8sd `RunningServiceArgs` — /proc argv[0] fallback under strict (systemctl denied; fixes `k8s status` readiness and the args-drift controller), with a one-shot probe gate
+- [x] Fix 11: explicit PATH without /usr/sbin, /sbin, /usr/games (kubectl plugin-discovery dir-list denials; /sbin is a merged-usr symlink to /usr/sbin), `apparmor_parser` called by absolute path
 
 ## Verification
 
@@ -43,5 +44,6 @@
 - [x] Health gate blocks with derived missing list; converges to `okay`; k8sd enabled+active
 - [x] 9/9 layouts mounted in the snap namespace; systemd drop-in absent
 - [x] k8sd patch applies and `go build ./pkg/snap/` passes
-- [ ] Bootstrap + pod lifecycle (in progress — blocked on the `/etc/cni` rebuild)
-- [ ] AppArmor denial sweep after bootstrap
+- [x] Bootstrap + pod lifecycle: `cluster status: ready`, node Ready (v1.36.4), cilium 1/1, all system pods Running, test pod schedules/runs/`exec`s/deletes cleanly (signal rules verified)
+- [x] AppArmor denial sweep after bootstrap: **zero** in steady state; runc strict patches verified live (pods run under `cri-containerd.apparmor.d`)
+- [x] `k8s inspect` produces a full report under strict (step 13)
