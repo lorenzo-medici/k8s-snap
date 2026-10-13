@@ -1,4 +1,4 @@
-From 17eea3560f15e1f18a3f6b3cb8daf65df58ba307 Mon Sep 17 00:00:00 2001
+From 64a93e4fae6ff6571402c3feb0f067c7678dbabb Mon Sep 17 00:00:00 2001
 From: k8s-snap strict <k8s-snap-strict@canonical.com>
 Date: Tue, 13 Oct 2026 10:03:04 +0300
 Subject: [PATCH] strict: flavor patch
@@ -44,8 +44,8 @@ Subject: [PATCH] strict: flavor patch
  snap/hooks/connect-plug-opengl                |   1 +
  snap/hooks/connect-plug-process-control       |   1 +
  snap/hooks/connect-plug-system-observe        |   1 +
- snap/snapcraft.yaml                           | 220 +++++++++++++++++-
- 30 files changed, 242 insertions(+), 85 deletions(-)
+ snap/snapcraft.yaml                           | 219 +++++++++++++++++-
+ 30 files changed, 241 insertions(+), 85 deletions(-)
  delete mode 100644 k8s/pebble/000-k8s.yaml
  delete mode 100644 k8s/pebble/pebble.service
  create mode 120000 snap/hooks/connect-plug-cifs-mount
@@ -385,7 +385,7 @@ index 00000000..cabc7046
 +configure
 \ No newline at end of file
 diff --git a/snap/snapcraft.yaml b/snap/snapcraft.yaml
-index 93333818..ab0df777 100644
+index 93333818..597ac799 100644
 --- a/snap/snapcraft.yaml
 +++ b/snap/snapcraft.yaml
 @@ -7,7 +7,8 @@ description: |-
@@ -517,7 +517,7 @@ index 93333818..ab0df777 100644
    containerd:
      command: k8s/wrappers/services/containerd
      daemon: notify
-@@ -288,43 +381,160 @@ apps:
+@@ -288,43 +381,159 @@ apps:
      restart-condition: always
      start-timeout: 5m
      before: [kubelet]
@@ -614,7 +614,6 @@ index 93333818..ab0df777 100644
 +      - k8s-etc-ro
 +      - k8s-kubeproxy
 +      - kernel-module-observe
-+      - kubernetes-support
 +      - mount-observe
 +      - network-bind
 +      - network-control
