@@ -1,4 +1,4 @@
-From d25265d57a60407c866f9e06327c423d6897cdd0 Mon Sep 17 00:00:00 2001
+From cee85340c9e34f737f87a54b2910bd2fb454f2da Mon Sep 17 00:00:00 2001
 From: k8s-snap strict <k8s-snap-strict@canonical.com>
 Date: Tue, 13 Oct 2026 10:03:04 +0300
 Subject: [PATCH] strict: flavor patch
@@ -44,8 +44,8 @@ Subject: [PATCH] strict: flavor patch
  snap/hooks/connect-plug-opengl                |   1 +
  snap/hooks/connect-plug-process-control       |   1 +
  snap/hooks/connect-plug-system-observe        |   1 +
- snap/snapcraft.yaml                           | 381 +++++++++++++++++-
- 30 files changed, 403 insertions(+), 85 deletions(-)
+ snap/snapcraft.yaml                           | 383 +++++++++++++++++-
+ 30 files changed, 405 insertions(+), 85 deletions(-)
  delete mode 100644 k8s/pebble/000-k8s.yaml
  delete mode 100644 k8s/pebble/pebble.service
  create mode 120000 snap/hooks/connect-plug-cifs-mount
@@ -385,7 +385,7 @@ index 00000000..cabc7046
 +configure
 \ No newline at end of file
 diff --git a/snap/snapcraft.yaml b/snap/snapcraft.yaml
-index 93333818..6422eccf 100644
+index 93333818..1f47097f 100644
 --- a/snap/snapcraft.yaml
 +++ b/snap/snapcraft.yaml
 @@ -7,7 +7,8 @@ description: |-
@@ -413,7 +413,7 @@ index 93333818..6422eccf 100644
  
  architectures:
    - build-on: [amd64]
-@@ -26,6 +29,79 @@ architectures:
+@@ -26,6 +29,81 @@ architectures:
    - build-on: [ppc64el]
    - build-on: [s390x]
  
@@ -446,7 +446,9 @@ index 93333818..6422eccf 100644
 +    interface: system-files
 +    write:
 +      - /etc/kubernetes
-+      - /etc/cni/net.d
++      # /etc/cni itself must be writable so k8sd can MkdirAll(/etc/cni/net.d):
++      # creating the parent is a write to /etc/cni, not to /etc/cni/net.d.
++      - /etc/cni
 +  # Read-only access to the same host paths for the services that consume
 +  # kubeconfigs, PKI and CNI configuration.
 +  k8s-etc-ro:
@@ -493,7 +495,7 @@ index 93333818..6422eccf 100644
  parts:
    build-deps:
      plugin: nil
-@@ -278,6 +354,23 @@ parts:
+@@ -278,6 +356,23 @@ parts:
  apps:
    k8s:
      command: k8s/wrappers/commands/k8s
@@ -517,7 +519,7 @@ index 93333818..6422eccf 100644
    containerd:
      command: k8s/wrappers/services/containerd
      daemon: notify
-@@ -288,43 +381,321 @@ apps:
+@@ -288,43 +383,321 @@ apps:
      restart-condition: always
      start-timeout: 5m
      before: [kubelet]
