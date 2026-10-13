@@ -11,9 +11,16 @@ k8s::common::setup_env() {
 
   local SNAP_CURRENT="${SNAP%"${SNAP_REVISION}"}current"
 
-  # Configure PATH, LD_LIBRARY_PATH
-  export PATH="$SNAP_CURRENT/usr/bin:$SNAP_CURRENT/bin:$SNAP_CURRENT/usr/sbin:$SNAP_CURRENT/sbin:$REAL_PATH"
-  export LD_LIBRARY_PATH="$SNAP_LIBRARY_PATH:$SNAP_CURRENT/lib:$SNAP_CURRENT/usr/lib:$SNAP_CURRENT/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:$SNAP_CURRENT/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:$SNAP_CURRENT/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/ceph:${REAL_LD_LIBRARY_PATH:-}"
+  # Configure PATH, LD_LIBRARY_PATH.
+  # Under strict confinement the base snap is the rootfs and host binaries are
+  # unreachable, so the REAL_PATH/REAL_LD_LIBRARY_PATH host tails must not be used.
+  if grep -q 'confinement: strict' "${SNAP}/meta/snap.yaml" 2>/dev/null; then
+    export PATH="$SNAP_CURRENT/usr/bin:$SNAP_CURRENT/bin:$SNAP_CURRENT/usr/sbin:$SNAP_CURRENT/sbin:$PATH"
+    export LD_LIBRARY_PATH="$SNAP_LIBRARY_PATH:$SNAP_CURRENT/lib:$SNAP_CURRENT/usr/lib:$SNAP_CURRENT/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:$SNAP_CURRENT/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:$SNAP_CURRENT/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/ceph"
+  else
+    export PATH="$SNAP_CURRENT/usr/bin:$SNAP_CURRENT/bin:$SNAP_CURRENT/usr/sbin:$SNAP_CURRENT/sbin:$REAL_PATH"
+    export LD_LIBRARY_PATH="$SNAP_LIBRARY_PATH:$SNAP_CURRENT/lib:$SNAP_CURRENT/usr/lib:$SNAP_CURRENT/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:$SNAP_CURRENT/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:$SNAP_CURRENT/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/ceph:${REAL_LD_LIBRARY_PATH:-}"
+  fi
 
   # NOTE(neoaggelos/2023-08-14):
   # we cannot list system locales from snap. instead, we attempt
@@ -41,6 +48,45 @@ k8s::common::is_strict() {
   else
     return 1
   fi
+}
+
+# List the interface plugs the snap declares, derived from meta/snap.yaml.
+# This is the single source of truth for the required-interface set:
+# k8s/hack/connect-interfaces.sh and the strict-interface tests use the same
+# derivation. Keep the awk extraction in sync with those call sites.
+# Example: 'k8s::common::required_interfaces'
+k8s::common::required_interfaces() {
+  awk '
+    /^    plugs:$/ { in_plugs=1; next }
+    in_plugs && /^    - / { sub(/^    - /, ""); print; next }
+    /^    plugs: \[/ { gsub(/[\[\]]/, ""); split($0, a, ": "); n=split(a[2], b, ","); for (i=1; i<=n; i++) { gsub(/ /, "", b[i]); print b[i] }; next }
+    { in_plugs=0 }
+  ' "${SNAP}/meta/snap.yaml" | sort -u
+}
+
+# Block until all declared interface plugs are connected (strict only).
+# Returns 1 (after setting health blocked) when plugs are missing; callers
+# should 'exit 0' so the hook terminates successfully and the next
+# connect-plug-* event re-triggers it. No-op on classic.
+# Example: 'k8s::common::check_snap_interfaces || exit 0'
+k8s::common::check_snap_interfaces() {
+  if ! k8s::common::is_strict; then
+    return 0
+  fi
+
+  local missing=() iface
+  while read -r iface; do
+    [ -z "$iface" ] && continue
+    if ! snapctl is-connected "$iface"; then
+      missing+=("$iface")
+    fi
+  done <<< "$(k8s::common::required_interfaces)"
+
+  if [ ${#missing[@]} -gt 0 ]; then
+    snapctl set-health blocked "You must connect ${missing[*]} before proceeding (see 'snap connections ${SNAP_INSTANCE_NAME}')"
+    return 1
+  fi
+  return 0
 }
 
 k8s::common::resources() {
@@ -73,9 +119,24 @@ k8s::common::on_fips_host() {
   return 1
 }
 
+# Decide whether a remove-hook cleanup step must be skipped because a required
+# interface is no longer connected (strict only). Returns 0 when the step must
+# be skipped, so cleanup degrades instead of erroring.
+# Example: 'k8s::remove::skip_if_disconnected network-control && return 0'
+k8s::remove::skip_if_disconnected() {
+  local plug="$1"
+  if k8s::common::is_strict && ! snapctl is-connected "$plug"; then
+    echo "strict: '$plug' is disconnected, skipping cleanup step"
+    return 0
+  fi
+  return 1
+}
+
 # Cleanup configuration left by the network feature
 k8s::remove::network() {
   k8s::common::setup_env
+
+  k8s::remove::skip_if_disconnected network-control && return 0
 
   k8s::cmd::k8s x-cleanup network || true
 }
@@ -84,44 +145,54 @@ k8s::remove::network() {
 k8s::remove::containers() {
   k8s::common::setup_env
 
+  k8s::remove::skip_if_disconnected docker-privileged && return 0
+
   k8s::cmd::k8s x-cleanup containers || true
 }
 
 k8s::remove::containerd() {
   k8s::common::setup_env
 
+  k8s::remove::skip_if_disconnected docker-privileged && return 0
+
   k8s::cmd::k8s x-cleanup containerd || true
 }
 
 # Cleanup systemd overrides
 k8s::remove::system_tuning() {
-  if ! k8s::common::is_strict; then
+  if k8s::common::is_strict; then
+    # Strict: exact paths only. A system-files grant does not permit listing
+    # /etc/sysctl.d, so the classic find/regex removal cannot be used.
+    # 1000-cilium.conf is written by k8s::util::apply_sysctl_tuning.
+    # The k8sd-written <N>-k8s.conf file is never created under strict
+    # (k8sd skips system tuning when strict).
+    k8s::util::run_with_sudo rm -f /etc/sysctl.d/1000-cilium.conf
+    k8s::util::run_with_sudo sysctl --system || true
+  else
     # Find files matching pattern: digits followed by '-k8s.conf'
     files_to_remove=$(find /etc/sysctl.d/ -maxdepth 1 -type f -regextype posix-extended -regex '.*/[0-9]+-k8s\.conf')
 
-
     if [ -n "$files_to_remove" ]; then
-      echo "$files_to_remove" | xargs sudo rm -f
-      sudo sysctl --system
+      # shellcheck disable=SC2086
+      k8s::util::run_with_sudo rm -f $files_to_remove
+      k8s::util::run_with_sudo sysctl --system
     fi
   fi
 }
 
 k8s::remove::resources() {
   if [ -d "$SNAP_COMMON/etc" ]; then
-    sudo rm -rf "$SNAP_COMMON/etc"
+    k8s::util::run_with_sudo rm -rf "$SNAP_COMMON/etc"
   fi
 }
 
 k8s::remove::kubelet_logs() {
-  if ! k8s::common::is_strict; then
-    if [ -d "$SNAP_COMMON/var/log/pods" ]; then
-        sudo rm -rf "$SNAP_COMMON/var/log/pods"
-    fi
+  if [ -d "$SNAP_COMMON/var/log/pods" ]; then
+    k8s::util::run_with_sudo rm -rf "$SNAP_COMMON/var/log/pods"
+  fi
 
-    if [ -d "$SNAP_COMMON/var/log/containers" ]; then
-      sudo rm -rf "$SNAP_COMMON/var/log/containers"
-    fi
+  if [ -d "$SNAP_COMMON/var/log/containers" ]; then
+    k8s::util::run_with_sudo rm -rf "$SNAP_COMMON/var/log/containers"
   fi
 }
 
@@ -213,8 +284,8 @@ k8s::common::validate_env() {
   done
 }
 
-# Execute a "$SNAP/bin/$service" with arguments from "$SNAP_DATA/args/$service" and optional additional args
-# Environment variables are loaded from "$SNAP_DATA/args/$service-env" and "$SNAP_DATA/args/snap-env"
+# Execute a "$SNAP/bin/$service" with arguments from "$SNAP_COMMON/args/$service" and optional additional args
+# Environment variables are loaded from "$SNAP_COMMON/args/$service-env" and "$SNAP_COMMON/args/snap-env"
 # Example: 'k8s::common::execute kubelet' or 'k8s::common::execute k8s status'
 k8s::common::execute() {
   local service_name="$1"
@@ -287,24 +358,72 @@ k8s::util::load_kernel_modules() {
   modprobe -- "$@"
 }
 
+# Run a command as root. Under strict confinement hooks and services already
+# run as root and sudo is not available; under classic, go through sudo while
+# preserving the snap environment.
+# Example: 'k8s::util::run_with_sudo rm -f /etc/sysctl.d/1000-cilium.conf'
+k8s::util::run_with_sudo() {
+  if k8s::common::is_strict; then
+    "$@"
+  else
+    local SAVE_LD_LIBRARY_PATH="${LD_LIBRARY_PATH}"
+    LD_LIBRARY_PATH="" sudo --preserve-env="$(env | awk -F= '{print $1}' | paste -sd,)" PATH="${PATH}" LD_LIBRARY_PATH="${SAVE_LD_LIBRARY_PATH}" "$@"
+  fi
+}
+
+# Apply sysctl settings required by Cilium and persist them across reboots.
+# Cilium expects rp_filter=0, which systemd defaults to 1 on Ubuntu 22.04+.
+# See https://github.com/cilium/cilium/issues/20125
+# Example: 'k8s::util::apply_sysctl_tuning'
+k8s::util::apply_sysctl_tuning() {
+  k8s::common::setup_env
+
+  # Apply immediately by writing /proc/sys directly (works under strict
+  # confinement with network-control) and persist in /etc/sysctl.d.
+  # /etc/sysctl.d is a real host path; under strict the write is permitted
+  # by the k8s-sysctl system-files plug (exact path, no glob).
+  local sysctl_file proc_file key
+  sysctl_file=$(k8s::util::run_with_sudo mktemp)
+  {
+    echo "# AUTOGENERATED by the k8s snap - Cilium requires rp_filter=0"
+    echo "# See https://github.com/cilium/cilium/issues/20125"
+    for proc_file in /proc/sys/net/ipv4/conf/*/rp_filter; do
+      [ -f "$proc_file" ] || continue
+      echo 0 > "$proc_file" || true
+      key="${proc_file#/proc/sys/}"
+      echo "${key//\//.} = 0"
+    done
+  } > "$sysctl_file"
+  k8s::util::run_with_sudo cp "$sysctl_file" /etc/sysctl.d/1000-cilium.conf
+  k8s::util::run_with_sudo rm -f "$sysctl_file"
+}
+
 k8s::containerd::ensure_systemd_defaults() {
   k8s::common::setup_env
 
-  local override_dir="/etc/systemd/system/snap.k8s.containerd.service.d"
+  # The systemd drop-in cannot be installed under strict confinement.
+  # Strict gets Delegate=true from docker-support and the ulimits/OOMScoreAdjust
+  # from k8s/wrappers/services/containerd. TasksMax has no strict equivalent.
+  if k8s::common::is_strict; then
+    return 0
+  fi
+
+  local override_dir="/etc/systemd/system/snap.${SNAP_INSTANCE_NAME}.containerd.service.d"
   local override_file="$SNAP/k8s/systemd/containerd-defaults.conf"
 
   if ! [ -f "$override_dir/containerd-defaults.conf" ]; then
     mkdir -p "$override_dir"
     cp "$override_file" "$override_dir/"
+    systemctl daemon-reload || true
   fi
 }
 
 # Sanitize feature gates in kube-apiserver arguments
 # This removes any feature gates that are not present in the current apiserver version
-# from the --feature-gates argument in /var/snap/k8s/common/args/kube-apiserver.
+# from the --feature-gates argument in $SNAP_COMMON/args/kube-apiserver.
 # Usage: k8s::apiserver::sanitize_feature_gates
 k8s::apiserver::sanitize_feature_gates() {
-  local args_file="/var/snap/k8s/common/args/kube-apiserver"
+  local args_file="$SNAP_COMMON/args/kube-apiserver"
 
   # Check if the args file exists
   if [ ! -f "$args_file" ]; then
@@ -318,9 +437,9 @@ k8s::apiserver::sanitize_feature_gates() {
 
   # Get the list of supported feature gates from kube-apiserver
   local supported_gates=""
-  if [ -x "/snap/k8s/current/bin/kube-apiserver" ]; then
+  if [ -x "$SNAP/bin/kube-apiserver" ]; then
     # Extract feature gate names from help output (format: kube:FeatureName=true|false)
-    supported_gates=$(/snap/k8s/current/bin/kube-apiserver --help 2>/dev/null | awk '/^ *kube:/{print $1}' | sed 's/^kube://' | sed 's/=.*//')
+    supported_gates=$("$SNAP/bin/kube-apiserver" --help 2>/dev/null | awk '/^ *kube:/{print $1}' | sed 's/^kube://' | sed 's/=.*//')
   fi
 
   # If we couldn't get supported gates, return without changes
