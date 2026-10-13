@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# Apply the strict confinement flavor patch to the working tree.
+# Invoked by .github/workflows/build-snap.yaml when flavor=strict:
+#   ./build-scripts/patches/"$INPUT_FLAVOR"/apply
+#
+# The patch touches snap/snapcraft.yaml and adds the connect-plug-* hook
+# symlinks; all runtime differences live on the classic branch behind
+# k8s::common::is_strict (k8s/lib.sh).
+
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+for patch in "$DIR"/000*.patch; do
+  echo "Applying $patch"
+  git apply --verbose "$patch"
+done
+
+echo "Strict flavor applied: $(grep -m1 '^confinement:' snap/snapcraft.yaml)"

@@ -1,0 +1,699 @@
+From 41b4233018afa902ffcf405cb9157f1a249bb184 Mon Sep 17 00:00:00 2001
+From: k8s-snap strict <k8s-snap-strict@canonical.com>
+Date: Tue, 13 Oct 2026 10:03:04 +0300
+Subject: [PATCH] strict: flavor patch
+
+- confinement: strict, assumes snapd2.62
+- OPENSSL_MODULES repointed to base path, EDITOR=nano for kubectl edit
+- top-level plugs incl. docker-support, kubernetes-support flavors,
+  system-files for /etc/kubernetes,/etc/cni/net.d,/etc/sysctl.d/1000-cilium.conf,
+  /var/log/kubernetes; kernel-module-load for cilium
+- layouts for base-owned paths (/var/lib/*, /opt/cni/bin, /usr/libexec,
+  /usr/local/lib, /var/log/pods|containers, /etc/nanorc)
+- per-app plug sets; k8sd install-mode: disable (health gate enables it)
+- hooks stanza with plugs
+- connect-plug-* symlinks to configure for every declared plug
+- remove k8s/pebble (host systemd supervision flavor, classic-only)
+---
+ k8s/pebble/000-k8s.yaml                       |  53 -----
+ k8s/pebble/pebble.service                     |  27 ---
+ snap/hooks/connect-plug-cifs-mount            |   1 +
+ snap/hooks/connect-plug-cilium-module-load    |   1 +
+ snap/hooks/connect-plug-docker-privileged     |   1 +
+ snap/hooks/connect-plug-docker-unprivileged   |   1 +
+ snap/hooks/connect-plug-firewall-control      |   1 +
+ snap/hooks/connect-plug-fuse-support          |   1 +
+ snap/hooks/connect-plug-hardware-observe      |   1 +
+ snap/hooks/connect-plug-home                  |   1 +
+ snap/hooks/connect-plug-home-read-all         |   1 +
+ snap/hooks/connect-plug-k8s-audit-log         |   1 +
+ snap/hooks/connect-plug-k8s-etc               |   1 +
+ snap/hooks/connect-plug-k8s-etc-ro            |   1 +
+ snap/hooks/connect-plug-k8s-kubelet           |   1 +
+ snap/hooks/connect-plug-k8s-kubeproxy         |   1 +
+ snap/hooks/connect-plug-k8s-sysctl            |   1 +
+ snap/hooks/connect-plug-kernel-crypto-api     |   1 +
+ snap/hooks/connect-plug-kernel-module-observe |   1 +
+ snap/hooks/connect-plug-kubernetes-support    |   1 +
+ snap/hooks/connect-plug-log-observe           |   1 +
+ snap/hooks/connect-plug-login-session-observe |   1 +
+ snap/hooks/connect-plug-mount-observe         |   1 +
+ snap/hooks/connect-plug-network               |   1 +
+ snap/hooks/connect-plug-network-bind          |   1 +
+ snap/hooks/connect-plug-network-control       |   1 +
+ snap/hooks/connect-plug-network-observe       |   1 +
+ snap/hooks/connect-plug-opengl                |   1 +
+ snap/hooks/connect-plug-process-control       |   1 +
+ snap/hooks/connect-plug-system-observe        |   1 +
+ snap/snapcraft.yaml                           | 225 +++++++++++++++++-
+ 31 files changed, 248 insertions(+), 85 deletions(-)
+ delete mode 100644 k8s/pebble/000-k8s.yaml
+ delete mode 100644 k8s/pebble/pebble.service
+ create mode 120000 snap/hooks/connect-plug-cifs-mount
+ create mode 120000 snap/hooks/connect-plug-cilium-module-load
+ create mode 120000 snap/hooks/connect-plug-docker-privileged
+ create mode 120000 snap/hooks/connect-plug-docker-unprivileged
+ create mode 120000 snap/hooks/connect-plug-firewall-control
+ create mode 120000 snap/hooks/connect-plug-fuse-support
+ create mode 120000 snap/hooks/connect-plug-hardware-observe
+ create mode 120000 snap/hooks/connect-plug-home
+ create mode 120000 snap/hooks/connect-plug-home-read-all
+ create mode 120000 snap/hooks/connect-plug-k8s-audit-log
+ create mode 120000 snap/hooks/connect-plug-k8s-etc
+ create mode 120000 snap/hooks/connect-plug-k8s-etc-ro
+ create mode 120000 snap/hooks/connect-plug-k8s-kubelet
+ create mode 120000 snap/hooks/connect-plug-k8s-kubeproxy
+ create mode 120000 snap/hooks/connect-plug-k8s-sysctl
+ create mode 120000 snap/hooks/connect-plug-kernel-crypto-api
+ create mode 120000 snap/hooks/connect-plug-kernel-module-observe
+ create mode 120000 snap/hooks/connect-plug-kubernetes-support
+ create mode 120000 snap/hooks/connect-plug-log-observe
+ create mode 120000 snap/hooks/connect-plug-login-session-observe
+ create mode 120000 snap/hooks/connect-plug-mount-observe
+ create mode 120000 snap/hooks/connect-plug-network
+ create mode 120000 snap/hooks/connect-plug-network-bind
+ create mode 120000 snap/hooks/connect-plug-network-control
+ create mode 120000 snap/hooks/connect-plug-network-observe
+ create mode 120000 snap/hooks/connect-plug-opengl
+ create mode 120000 snap/hooks/connect-plug-process-control
+ create mode 120000 snap/hooks/connect-plug-system-observe
+
+diff --git a/k8s/pebble/000-k8s.yaml b/k8s/pebble/000-k8s.yaml
+deleted file mode 100644
+index 662f6216..00000000
+--- a/k8s/pebble/000-k8s.yaml
++++ /dev/null
+@@ -1,53 +0,0 @@
+-services:
+-  k8sd:
+-    override: replace
+-    command: bash -c "$SNAP/k8s/wrappers/services/k8sd"
+-    startup: enabled
+-
+-  containerd:
+-    override: replace
+-    command: bash -c "$SNAP/k8s/wrappers/services/containerd"
+-    startup: disabled
+-    before: [kubelet]
+-
+-  etcd:
+-    override: replace
+-    command: bash -c "$SNAP/k8s/wrappers/services/etcd"
+-    startup: disabled
+-    before: [kube-apiserver]
+-
+-  kube-apiserver:
+-    override: replace
+-    command: bash -c "$SNAP/k8s/wrappers/services/kube-apiserver"
+-    startup: disabled
+-    before: [kubelet, kube-controller-manager, kube-proxy, kube-scheduler]
+-
+-  kubelet:
+-    override: replace
+-    command: bash -c "$SNAP/k8s/wrappers/services/kubelet"
+-    startup: disabled
+-    after: [containerd]
+-
+-  kube-controller-manager:
+-    override: replace
+-    command: bash -c "$SNAP/k8s/wrappers/services/kube-controller-manager"
+-    startup: disabled
+-    after: [kube-apiserver]
+-
+-  kube-scheduler:
+-    override: replace
+-    command: bash -c "$SNAP/k8s/wrappers/services/kube-scheduler"
+-    startup: disabled
+-    after: [kube-apiserver]
+-
+-  kube-proxy:
+-    override: replace
+-    command: bash -c "$SNAP/k8s/wrappers/services/kube-proxy"
+-    startup: disabled
+-    after: [kube-apiserver]
+-
+-  k8s-apiserver-proxy:
+-    override: replace
+-    command: bash -c "$SNAP/k8s/wrappers/services/k8s-apiserver-proxy"
+-    startup: disabled
+-    before: [kube-proxy, kubelet]
+diff --git a/k8s/pebble/pebble.service b/k8s/pebble/pebble.service
+deleted file mode 100644
+index dfd7afc3..00000000
+--- a/k8s/pebble/pebble.service
++++ /dev/null
+@@ -1,27 +0,0 @@
+-[Unit]
+-Description=pebble
+-After=network.target
+-
+-[Service]
+-ExecStart=/snap/k8s/current/bin/pebble run
+-Restart=always
+-RestartSec=2
+-
+-# Must set environment here as well, since Docker ENV is not propagated to the service
+-Environment=SNAP=/snap/k8s/current
+-Environment=SNAP_REVISION=current
+-Environment=SNAP_COMMON=/var/snap/k8s/common
+-Environment=REAL_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/k8s/current/bin
+-Environment=K8SD_RUNTIME_ENVIRONMENT=pebble
+-
+-# Having non-zero Limit*s causes performance problems due to accounting overhead
+-# in the kernel. We recommend using cgroups to do container-local accounting.
+-LimitNPROC=infinity
+-LimitCORE=infinity
+-LimitNOFILE=infinity
+-TasksMax=infinity
+-OOMScoreAdjust=-999
+-
+-[Install]
+-WantedBy=multi-user.target
+diff --git a/snap/hooks/connect-plug-cifs-mount b/snap/hooks/connect-plug-cifs-mount
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-cifs-mount
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-cilium-module-load b/snap/hooks/connect-plug-cilium-module-load
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-cilium-module-load
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-docker-privileged b/snap/hooks/connect-plug-docker-privileged
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-docker-privileged
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-docker-unprivileged b/snap/hooks/connect-plug-docker-unprivileged
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-docker-unprivileged
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-firewall-control b/snap/hooks/connect-plug-firewall-control
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-firewall-control
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-fuse-support b/snap/hooks/connect-plug-fuse-support
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-fuse-support
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-hardware-observe b/snap/hooks/connect-plug-hardware-observe
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-hardware-observe
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-home b/snap/hooks/connect-plug-home
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-home
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-home-read-all b/snap/hooks/connect-plug-home-read-all
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-home-read-all
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-k8s-audit-log b/snap/hooks/connect-plug-k8s-audit-log
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-k8s-audit-log
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-k8s-etc b/snap/hooks/connect-plug-k8s-etc
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-k8s-etc
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-k8s-etc-ro b/snap/hooks/connect-plug-k8s-etc-ro
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-k8s-etc-ro
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-k8s-kubelet b/snap/hooks/connect-plug-k8s-kubelet
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-k8s-kubelet
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-k8s-kubeproxy b/snap/hooks/connect-plug-k8s-kubeproxy
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-k8s-kubeproxy
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-k8s-sysctl b/snap/hooks/connect-plug-k8s-sysctl
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-k8s-sysctl
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-kernel-crypto-api b/snap/hooks/connect-plug-kernel-crypto-api
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-kernel-crypto-api
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-kernel-module-observe b/snap/hooks/connect-plug-kernel-module-observe
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-kernel-module-observe
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-kubernetes-support b/snap/hooks/connect-plug-kubernetes-support
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-kubernetes-support
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-log-observe b/snap/hooks/connect-plug-log-observe
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-log-observe
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-login-session-observe b/snap/hooks/connect-plug-login-session-observe
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-login-session-observe
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-mount-observe b/snap/hooks/connect-plug-mount-observe
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-mount-observe
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-network b/snap/hooks/connect-plug-network
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-network
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-network-bind b/snap/hooks/connect-plug-network-bind
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-network-bind
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-network-control b/snap/hooks/connect-plug-network-control
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-network-control
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-network-observe b/snap/hooks/connect-plug-network-observe
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-network-observe
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-opengl b/snap/hooks/connect-plug-opengl
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-opengl
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-process-control b/snap/hooks/connect-plug-process-control
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-process-control
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/hooks/connect-plug-system-observe b/snap/hooks/connect-plug-system-observe
+new file mode 120000
+index 00000000..cabc7046
+--- /dev/null
++++ b/snap/hooks/connect-plug-system-observe
+@@ -0,0 +1 @@
++configure
+\ No newline at end of file
+diff --git a/snap/snapcraft.yaml b/snap/snapcraft.yaml
+index 93333818..388071ca 100644
+--- a/snap/snapcraft.yaml
++++ b/snap/snapcraft.yaml
+@@ -7,7 +7,8 @@ description: |-
+   on any infrastructure
+ license: GPL-3.0
+ grade: stable
+-confinement: classic
++confinement: strict
++assumes: [snapd2.62]
+ # Note(ben): Snapcraft does not expose its base for part builds, so we need to set it manually.
+ # Feature request tracked in https://github.com/canonical/snapcraft/issues/5614
+ # For now, remember to also update OPENSSL_MODULES and etcd part BASE when bumping this version.
+@@ -16,9 +17,11 @@ environment:
+   REAL_PATH: $PATH
+   REAL_LD_LIBRARY_PATH: $LD_LIBRARY_PATH
+   CRAFT_ARCH_TRIPLET_BUILD_FOR: $CRAFT_ARCH_TRIPLET_BUILD_FOR
+-  # Note(ben): Needs to be changed to /snap/core24/current/usr/lib/x86_64-linux-gnu/ossl-modules/
+-  # when base is updated to core24 (mind the removed "-3").
+-  OPENSSL_MODULES: /snap/core22/current/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/ossl-modules-3/
++  # Under strict confinement the base snap is the rootfs, so the OpenSSL
++  # modules are at their standard base path.
++  OPENSSL_MODULES: /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/ossl-modules-3/
++  # nano is staged in the snap; set it as the editor so 'kubectl edit' works
++  EDITOR: $SNAP/bin/nano
+ 
+ architectures:
+   - build-on: [amd64]
+@@ -26,6 +29,82 @@ architectures:
+   - build-on: [ppc64el]
+   - build-on: [s390x]
+ 
++# Custom interface plugs. Super-privileged interfaces (docker-support,
++# system-files, home read:all, kernel-module-load) require a store
++# snap-declaration; see docs/canonicalk8s/snap/explanation/security.md.
++plugs:
++  home-read-all:
++    interface: home
++    read: all
++  docker-privileged:
++    interface: docker-support
++    privileged-containers: true
++  docker-unprivileged:
++    interface: docker-support
++    privileged-containers: false
++  k8s-kubelet:
++    interface: kubernetes-support
++    flavor: kubelet
++  k8s-kubeproxy:
++    interface: kubernetes-support
++    flavor: kubeproxy
++  cilium-module-load:
++    interface: kernel-module-load
++    modules:
++      - name: iptable_raw
++        load: on-boot
++      - name: xt_socket
++        load: on-boot
++  # Host-visible Kubernetes configuration and CNI config (compliance contract).
++  # Written by k8sd. Exact paths only: system-files rejects globs.
++  k8s-etc:
++    interface: system-files
++    write:
++      - /etc/kubernetes
++      - /etc/cni/net.d
++  # Read-only access to the same host paths for the services that consume
++  # kubeconfigs, PKI and CNI configuration.
++  k8s-etc-ro:
++    interface: system-files
++    read:
++      - /etc/kubernetes
++      - /etc/cni/net.d
++  # Persisted sysctl settings (written by the configure hook,
++  # k8s::util::apply_sysctl_tuning). Exact path, must stay in sync with
++  # k8s/lib.sh.
++  k8s-sysctl:
++    interface: system-files
++    write:
++      - /etc/sysctl.d/1000-cilium.conf
++  # Kubernetes audit log, asserted from the host by compliance docs/tests.
++  k8s-audit-log:
++    interface: system-files
++    write:
++      - /var/log/kubernetes
++
++# Relocate paths that are owned by the base snap under strict confinement.
++# /etc, /run and /var/log are host-visible and are covered by interface
++# grants instead; /run is not a legal layout target.
++layout:
++  /var/lib/kubelet:
++    bind: $SNAP_COMMON/var/lib/kubelet
++  /var/lib/cni:
++    bind: $SNAP_COMMON/var/lib/cni
++  /var/lib/kube-proxy:
++    bind: $SNAP_COMMON/kube-proxy
++  /opt/cni/bin:
++    bind: $SNAP_COMMON/opt/cni/bin
++  /usr/libexec:
++    bind: $SNAP_COMMON/usr/libexec
++  /usr/local/lib:
++    bind: $SNAP_COMMON/usr/local/lib
++  /var/log/pods:
++    bind: $SNAP_COMMON/var/log/pods
++  /var/log/containers:
++    bind: $SNAP_COMMON/var/log/containers
++  /etc/nanorc:
++    bind-file: $SNAP_COMMON/etc/nanorc
++
+ parts:
+   build-deps:
+     plugin: nil
+@@ -278,6 +357,23 @@ parts:
+ apps:
+   k8s:
+     command: k8s/wrappers/commands/k8s
++    plugs:
++      - firewall-control
++      - home
++      - home-read-all
++      - k8s-etc-ro
++      - kernel-module-observe
++      - kubernetes-support
++      - log-observe
++      - login-session-observe
++      - mount-observe
++      - network
++      - network-bind
++      - network-control
++      - network-observe
++      - opengl
++      - process-control
++      - system-observe
+   containerd:
+     command: k8s/wrappers/services/containerd
+     daemon: notify
+@@ -288,43 +384,162 @@ apps:
+     restart-condition: always
+     start-timeout: 5m
+     before: [kubelet]
++    plugs:
++      - cilium-module-load
++      - cifs-mount
++      - docker-privileged
++      - firewall-control
++      - fuse-support
++      - kernel-crypto-api
++      - kubernetes-support
++      - mount-observe
++      - network-bind
++      - network-control
++      - opengl
+   etcd:
+     command: k8s/wrappers/services/etcd
+     install-mode: disable
+     daemon: simple
+     before: [kube-apiserver]
++    plugs:
++      - k8s-etc-ro
++      - network
++      - network-bind
+   k8sd:
+     command: k8s/wrappers/services/k8sd
+-    install-mode: enable
++    install-mode: disable
+     daemon: simple
++    plugs:
++      - docker-unprivileged
++      - firewall-control
++      - k8s-etc
++      - k8s-sysctl
++      - kubernetes-support
++      - mount-observe
++      - network
++      - network-bind
++      - network-control
++      - process-control
++      - system-observe
+   kubelet:
+     install-mode: disable
+     command: k8s/wrappers/services/kubelet
+     daemon: simple
+     after: [containerd]
++    plugs:
++      - docker-privileged
++      - firewall-control
++      - hardware-observe
++      - k8s-etc-ro
++      - k8s-kubelet
++      - kernel-module-observe
++      - kubernetes-support
++      - mount-observe
++      - network-bind
++      - network-control
++      - network-observe
++      - opengl
++      - process-control
++      - system-observe
+   kube-apiserver:
+     install-mode: disable
+     command: k8s/wrappers/services/kube-apiserver
+     daemon: simple
+     before: [kubelet, kube-controller-manager, kube-proxy, kube-scheduler]
+     stop-timeout: 5s
++    plugs:
++      - k8s-audit-log
++      - k8s-etc-ro
++      - network
++      - network-bind
++      - network-observe
++      - system-observe
+   kube-controller-manager:
+     install-mode: disable
+     command: k8s/wrappers/services/kube-controller-manager
+     daemon: simple
+     after: [kube-apiserver]
++    plugs:
++      - k8s-etc-ro
++      - network
++      - network-bind
++      - network-observe
++      - system-observe
+   kube-proxy:
+     install-mode: disable
+     command: k8s/wrappers/services/kube-proxy
+     daemon: simple
+     after: [kube-apiserver]
++    plugs:
++      - docker-privileged
++      - firewall-control
++      - hardware-observe
++      - k8s-etc-ro
++      - k8s-kubeproxy
++      - kernel-module-observe
++      - kubernetes-support
++      - mount-observe
++      - network-bind
++      - network-control
++      - network-observe
++      - opengl
++      - process-control
++      - system-observe
+   kube-scheduler:
+     install-mode: disable
+     command: k8s/wrappers/services/kube-scheduler
+     daemon: simple
+     after: [kube-apiserver]
++    plugs:
++      - k8s-etc-ro
++      - network
++      - network-bind
++      - network-observe
++      - system-observe
+   k8s-apiserver-proxy:
+     install-mode: disable
+     command: k8s/wrappers/services/k8s-apiserver-proxy
+     daemon: simple
+     before: [kubelet, kube-proxy]
++    plugs:
++      - k8s-etc-ro
++      - network
++      - network-bind
++      - network-control
++      - network-observe
++
++hooks:
++  install:
++    plugs:
++      - firewall-control
++      - kubernetes-support
++      - network
++      - network-bind
++      - network-control
++  configure:
++    plugs:
++      - firewall-control
++      - k8s-sysctl
++      - kubernetes-support
++      - network
++      - network-bind
++      - network-control
++  pre-refresh:
++    plugs:
++      - network
++      - network-bind
++  post-refresh:
++    plugs:
++      - network
++      - network-bind
++  remove:
++    plugs:
++      - firewall-control
++      - k8s-kubelet
++      - k8s-sysctl
++      - kubernetes-support
++      - mount-observe
++      - network
++      - network-bind
++      - network-control
++      - process-control
+-- 
+2.43.0
+
