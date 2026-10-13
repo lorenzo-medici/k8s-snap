@@ -10,8 +10,13 @@ DIR = Path(__file__).absolute().parent
 _PROJECT_DIR = os.getenv("SNAPCRAFT_PROJECT_DIR") or ""
 PROJECT_DIR = _PROJECT_DIR and Path(_PROJECT_DIR) or Path(DIR / "..")
 
-# Strict confinement needs extra patches
-STRICT = "confinement: strict" in (PROJECT_DIR / "snap/snapcraft.yaml").read_text()
+# Strict confinement needs extra patches. Match the literal top-level yaml
+# line only: a raw substring test also matches the same words in comments
+# and override-prime scripts, silently enabling strict patches on classic.
+STRICT = any(
+    line.rstrip() == "confinement: strict"
+    for line in (PROJECT_DIR / "snap/snapcraft.yaml").read_text().splitlines()
+)
 
 
 class Version:
@@ -101,7 +106,8 @@ def get_patches_for(component: str, version_string: str) -> list:
             patches.extend(
                 [
                     p.resolve().as_posix()
-                    for p in (patches_dir / patch_version).iterdir()
+                    # sorted: multi-patch series (e.g. runc strict patches) are order-dependent
+                    for p in sorted((patches_dir / patch_version).iterdir())
                 ]
             )
 
