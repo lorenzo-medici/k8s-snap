@@ -29,6 +29,10 @@ on:
         description: Channel to download the second snap from
         type: string
         default: ""
+      flavor:
+        description: Snap flavor to test (e.g. strict), leave empty for classic
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       arch:
@@ -53,6 +57,10 @@ on:
         description: Channel to download the second snap from
         type: string
         default: ""
+      flavor:
+        description: Snap flavor to test (e.g. strict), leave empty for classic
+        type: string
+        default: ""
 
 jobs:
   performance-test-1:
@@ -63,6 +71,7 @@ jobs:
       os: ${{ inputs.os }}
       artifact: ${{ inputs.artifact-1 }}
       channel: ${{ inputs.channel-1 }}
+      flavor: ${{ inputs.flavor }}
       test-collection-branch: main
       test-tags: performance
       # All performance tests run in one job to collect results in one report.
@@ -75,6 +84,7 @@ jobs:
       os: ${{ inputs.os }}
       artifact: ${{ inputs.artifact-2 }}
       channel: ${{ inputs.channel-2 }}
+      flavor: ${{ inputs.flavor }}
       test-collection-branch: main
       test-tags: performance
       # All performance tests run in one job to collect results in one report.

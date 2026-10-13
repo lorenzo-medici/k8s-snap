@@ -7,6 +7,11 @@ name: Nightly
 # every PR by lint_and_integration.yaml. Use workflow_dispatch to test an edit.
 on:
   workflow_dispatch:
+    inputs:
+      flavor:
+        description: Snap flavor to test (e.g. strict), leave empty for classic
+        default: ""
+        type: string
   schedule:
     - cron: "0 0 * * *" # Runs every midnight
 
@@ -37,6 +42,7 @@ jobs:
       arch: ${{ matrix.arch }}
       os: ${{ matrix.os }}
       channel: ${{ matrix.channel }}
+      flavor: ${{ inputs.flavor || '' }}
       test-tags: "up_to_nightly"
       parallel: true
       # We need to reduce the max parallelism here to avoid occupying all runners.
@@ -58,6 +64,7 @@ jobs:
     with:
       arch: amd64
       os: ubuntu:24.04
+      flavor: ${{ inputs.flavor || '' }}
       # Smallest tag set, used as a lightweight smoke test.
       test-tags: "pull_request"
       artifact: ${{ needs.build-snap-go-candidate.outputs.snap-artifact }}
