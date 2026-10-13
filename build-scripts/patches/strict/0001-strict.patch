@@ -1,4 +1,4 @@
-From 89968b07e15cd916edcc122be61662029d02b948 Mon Sep 17 00:00:00 2001
+From e173d1561c3ae60b3848901bfcbb3fc812fb0299 Mon Sep 17 00:00:00 2001
 From: k8s-snap strict <k8s-snap-strict@canonical.com>
 Date: Tue, 13 Oct 2026 10:03:04 +0300
 Subject: [PATCH] strict: flavor patch
@@ -385,7 +385,7 @@ index 00000000..cabc7046
 +configure
 \ No newline at end of file
 diff --git a/snap/snapcraft.yaml b/snap/snapcraft.yaml
-index 93333818..10b2b177 100644
+index 93333818..4b7d450e 100644
 --- a/snap/snapcraft.yaml
 +++ b/snap/snapcraft.yaml
 @@ -7,7 +7,8 @@ description: |-
@@ -414,7 +414,7 @@ index 93333818..10b2b177 100644
 +  # under the generated AppArmor profiles, and kubectl's plugin discovery
 +  # probes every PATH entry (harmless but noisy denials). apparmor_parser
 +  # resolves via the /sbin -> usr/sbin symlink instead.
-+  PATH: $SNAP/usr/sbin:$SNAP/usr/bin:$SNAP/sbin:$SNAP/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/sbin:/bin
++  PATH: $SNAP/usr/sbin:$SNAP/usr/bin:$SNAP/sbin:$SNAP/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/bin
  
  architectures:
    - build-on: [amd64]
