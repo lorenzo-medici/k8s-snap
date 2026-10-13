@@ -31,6 +31,8 @@
 - [x] Fix 5: `k8s-etc` grants `/etc/cni` (MkdirAll parent), not only `/etc/cni/net.d` (`9dbf7523`)
 - [x] Fix 6: k8sd snapctl patch compile fix — `Strict()` method, not `strict` field (`4de8c266`)
 - [x] Fix 7: kubelet `make-rshared` targets the layout mount point; the two-arg remount form is denied (`b58e372d`)
+- [x] Fix 8: all parts flipped to `no-patchelf` — snapcraft's patchelf retargets to `/snap/core22/current`, denied under strict (`5d893f9a`)
+- [x] Fix 9: k8sd cilium patch — `cni.binPath` spelled host-visible under strict (nsenter init containers) 
 
 ## Verification
 
