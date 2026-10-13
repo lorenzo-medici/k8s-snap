@@ -50,4 +50,5 @@ jobs:
           git commit -qm "autoupdate: apply strict flavor patch to ${{ matrix.branch }}"
           # Generated branch: force-push is expected, it always mirrors the
           # source branch tip plus the strict patch.
+          git fetch origin "${TARGET_BRANCH}" || true
           git push --force-with-lease origin "HEAD:refs/heads/${TARGET_BRANCH}"
