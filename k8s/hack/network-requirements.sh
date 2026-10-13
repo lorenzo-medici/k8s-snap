@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+# Assert host network requirements for the k8s snap.
+#
+# This script runs on the host from an unconfined shell (via k8s/hack/init.sh).
+# The rp_filter tuning it used to apply is now done by the snap itself in the
+# configure hook (k8s::util::apply_sysctl_tuning), and the snapd AppArmor
+# profile patches were dropped: LP#2047798 and LP#2053271 are Fix Committed.
+
 set -u
 
 if [ "$EUID" -ne 0 ]
@@ -14,28 +21,14 @@ if [ -z "$cgroup_hostroot" ]; then
   exit 1
 fi
 
-# Require bpf to be mounted
-# TODO: Move into init after https://bugs.launchpad.net/snapd/+bug/2048506
+# Require bpf to be mounted.
+# snap-confine mounts /sys/fs/bpf for confined snaps that have access to
+# /dev via interfaces (LP#2048506 is Won't Fix), so mounting it here is no
+# longer necessary. Assert it instead and fail with an actionable message.
 bpf_root="$(mount -t bpf | head -1 | cut -d' ' -f3)"
 if [ -z "$bpf_root" ]; then
-  if ! mount -t bpf -o rw,nosuid,nodev,noexec,relatime,mode=700 bpf /sys/fs/bpf; then
-    echo "/sys/fs/bpf not found and couldn't auto mount, failing..."
-    exit 1
-  fi
+  echo "/sys/fs/bpf is not mounted."
+  echo "Cilium requires a mounted bpffs. Mount it with:"
+  echo "    mount -t bpf -o rw,nosuid,nodev,noexec,relatime,mode=700 bpf /sys/fs/bpf"
+  exit 1
 fi
-
-# TODO: Move into init after https://bugs.launchpad.net/snapd/+bug/2048507
-# Cilium expects rp_filter=0 which is set to rp_filter=1 by defaut by systemd(Ubuntu 22.04>)
-# Check https://github.com/cilium/cilium/issues/20125 for more.
-sudo sed -i -e '/net.ipv4.conf.*.rp_filter/d' $(sudo grep -ril '\.rp_filter' /etc/sysctl.d/ /usr/lib/sysctl.d/)
-sudo sysctl -a | grep '\.rp_filter' | awk '{print $1" = 0"}' | sudo tee -a /etc/sysctl.d/1000-cilium.conf
-sudo sysctl --system
-
-# TODO: Remove after https://bugs.launchpad.net/snapd/+bug/2047798
-sudo sed -i -e 's/\/run\/netns\/ r/\/run\/netns\/ rk/g' /var/lib/snapd/apparmor/profiles/snap.k8s.containerd
-sudo sed -i -e 's/userns,/userns rwk,/g' /var/lib/snapd/apparmor/profiles/snap.k8s.containerd # Tempfix
-sudo apparmor_parser -r /var/lib/snapd/apparmor/profiles/snap.k8s.containerd
-
-# TODO: Remove after https://bugs.launchpad.net/snapd/+bug/2053271
-sudo sed -i -e '/mountinfo/aowner @{PROC}\/@{pid}\/task\/@{tid}\/mountinfo r,' /var/lib/snapd/apparmor/profiles/snap.k8s.k8sd
-sudo apparmor_parser -r /var/lib/snapd/apparmor/profiles/snap.k8s.k8sd
