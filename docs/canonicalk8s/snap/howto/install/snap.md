@@ -102,6 +102,12 @@ shows `blocked` and names the missing ones). A few interfaces
 `kernel-module-load`) are super-privileged and additionally require Snap
 Store approval.
 
+```{note}
+The strict flavor is validated on LXD virtual machines. Other substrates
+(Multipass, LXD containers, nested containers) are not yet validated for
+strict confinement.
+```
+
 ## Bootstrap the cluster
 
 Installing the snap sets up all the parts required to run Kubernetes. The next
