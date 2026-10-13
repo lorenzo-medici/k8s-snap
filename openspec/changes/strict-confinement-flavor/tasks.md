@@ -27,7 +27,7 @@
 - [x] Fix 1: drop `k8s-kubelet` — duplicate `systemd_run` hat with default flavor (`36927064`)
 - [x] Fix 2: kube-proxy keeps only `k8s-kubeproxy` — one kubernetes-support plug per app (`bb3816c5`)
 - [x] Fix 3: declare all 27 connect-plug hooks with their plug sets (`ca338469`)
-- [x] Fix 4: k8sd component patch — `snapctl` for service management under strict
+- [x] Fix 4: k8sd component patch — `snapctl` for service management under strict (`76dcb78e`, compile fix `4de8c266`)
 - [x] Fix 5: `k8s-etc` grants `/etc/cni` (MkdirAll parent), not only `/etc/cni/net.d` (`9dbf7523`)
 
 ## Verification
