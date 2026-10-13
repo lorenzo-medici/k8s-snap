@@ -29,6 +29,8 @@
 - [x] Fix 3: declare all 27 connect-plug hooks with their plug sets (`ca338469`)
 - [x] Fix 4: k8sd component patch — `snapctl` for service management under strict (`76dcb78e`, compile fix `4de8c266`)
 - [x] Fix 5: `k8s-etc` grants `/etc/cni` (MkdirAll parent), not only `/etc/cni/net.d` (`9dbf7523`)
+- [x] Fix 6: k8sd snapctl patch compile fix — `Strict()` method, not `strict` field (`4de8c266`)
+- [x] Fix 7: kubelet `make-rshared` targets the layout mount point; the two-arg remount form is denied (`b58e372d`)
 
 ## Verification
 
