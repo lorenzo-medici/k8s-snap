@@ -1,4 +1,4 @@
-From cee85340c9e34f737f87a54b2910bd2fb454f2da Mon Sep 17 00:00:00 2001
+From 1ac4b94fa3548d3b81bdb4b21c6fe9ed33dee873 Mon Sep 17 00:00:00 2001
 From: k8s-snap strict <k8s-snap-strict@canonical.com>
 Date: Tue, 13 Oct 2026 10:03:04 +0300
 Subject: [PATCH] strict: flavor patch
@@ -44,8 +44,8 @@ Subject: [PATCH] strict: flavor patch
  snap/hooks/connect-plug-opengl                |   1 +
  snap/hooks/connect-plug-process-control       |   1 +
  snap/hooks/connect-plug-system-observe        |   1 +
- snap/snapcraft.yaml                           | 383 +++++++++++++++++-
- 30 files changed, 405 insertions(+), 85 deletions(-)
+ snap/snapcraft.yaml                           | 409 +++++++++++++++++-
+ 30 files changed, 418 insertions(+), 98 deletions(-)
  delete mode 100644 k8s/pebble/000-k8s.yaml
  delete mode 100644 k8s/pebble/pebble.service
  create mode 120000 snap/hooks/connect-plug-cifs-mount
@@ -385,7 +385,7 @@ index 00000000..cabc7046
 +configure
 \ No newline at end of file
 diff --git a/snap/snapcraft.yaml b/snap/snapcraft.yaml
-index 93333818..1f47097f 100644
+index 93333818..b8159755 100644
 --- a/snap/snapcraft.yaml
 +++ b/snap/snapcraft.yaml
 @@ -7,7 +7,8 @@ description: |-
@@ -413,7 +413,7 @@ index 93333818..1f47097f 100644
  
  architectures:
    - build-on: [amd64]
-@@ -26,6 +29,81 @@ architectures:
+@@ -26,12 +29,87 @@ architectures:
    - build-on: [ppc64el]
    - build-on: [s390x]
  
@@ -495,6 +495,118 @@ index 93333818..1f47097f 100644
  parts:
    build-deps:
      plugin: nil
+     build-snaps:
+       - go/1.26-fips/stable
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     build-packages:
+       - sudo
+       - autoconf
+@@ -67,7 +145,7 @@ parts:
+     - BASE: core22  # Note: This field must match the base field above.
+     - BIN: $CRAFT_STAGE/bin/etcd
+     override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh etcd
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     override-prime: |-
+       # D10: under strict confinement the base snap is the rootfs, so the
+       # unpatched ELF interpreter is already correct. Same test as
+@@ -92,7 +170,7 @@ parts:
+ 
+   k8sd:
+     source: build-scripts/components/k8sd
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     plugin: nil
+     override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh k8sd
+ 
+@@ -100,14 +178,14 @@ parts:
+     after: [build-deps]
+     plugin: nil
+     source: build-scripts/components/cni
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh cni
+ 
+   kubernetes:
+     after: [build-deps]
+     plugin: nil
+     source: build-scripts
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh kubernetes
+ 
+   kubernetes-version:
+@@ -117,7 +195,7 @@ parts:
+ 
+   helm:
+     after: [build-deps]
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     plugin: nil
+     source: build-scripts/components/helm
+     override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh helm
+@@ -126,7 +204,7 @@ parts:
+     after: [build-deps]
+     plugin: autotools
+     source: https://www.netfilter.org/pub/libmnl/libmnl-1.0.4.tar.bz2
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     prime:
+       - -usr/local/include
+ 
+@@ -134,7 +212,7 @@ parts:
+     after: [libmnl]
+     plugin: autotools
+     source: https://www.netfilter.org/projects/libnftnl/files/libnftnl-1.1.8.tar.bz2
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     build-environment:
+       - LIBMNL_LIBS: $CRAFT_STAGE/usr/lib
+     prime:
+@@ -144,7 +222,7 @@ parts:
+     after: [libnftnl]
+     source: https://www.netfilter.org/projects/iptables/files/iptables-1.8.6.tar.bz2
+     plugin: autotools
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     build-environment:
+       - LIBMNL_LIBS: $CRAFT_STAGE/usr/lib
+       - LIBNFTNL_LIBS: $CRAFT_STAGE/usr/lib
+@@ -165,7 +243,7 @@ parts:
+     override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh containerd
+     build-environment:
+     - BASE: core22  # Note: This field must match the base field above.
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     override-prime: |-
+       # D10: under strict confinement the base snap is the rootfs, so the
+       # unpatched ELF interpreter is already correct. Same test as
+@@ -193,13 +271,13 @@ parts:
+   runc:
+     after: [iptables, build-deps]
+     plugin: nil
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     source: build-scripts/components/runc
+     override-build: $CRAFT_PROJECT_DIR/build-scripts/build-component.sh runc
+ 
+   bash-utils:
+     plugin: nil
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     stage-packages:
+       - conntrack
+       - coreutils
+@@ -245,7 +323,7 @@ parts:
+   k8s:
+     plugin: nil
+     source: k8s
+-    build-attributes: [enable-patchelf]
++    build-attributes: [no-patchelf]
+     override-build: |
+       rm $CRAFT_PART_INSTALL/k8s -rf
+       cp --archive --link --no-dereference . $CRAFT_PART_INSTALL/k8s
 @@ -278,6 +356,23 @@ parts:
  apps:
    k8s:
