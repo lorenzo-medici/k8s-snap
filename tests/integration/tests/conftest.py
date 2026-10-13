@@ -48,15 +48,30 @@ def _generate_inspection_report(h: harness.Harness, instance_id: str):
 
     try:
         inspection_path = Path(config.INSPECTION_REPORTS_DIR)
-        result = h.exec(
-            instance_id,
-            [
+        # Under strict confinement, run the inspect script through the confined
+        # app so it exercises the confined code path (host invocation would
+        # mask interface gaps). On classic, keep the host-path invocation.
+        if config.FLAVOR == "strict":
+            # A confined process cannot write to / : collect the report in a
+            # location covered by the home plug. Runs through the confined
+            # app so the confined code path is exercised.
+            inspect_cmd = [
+                "sh",
+                "-c",
+                "cd /home/ubuntu && k8s inspect --all-namespaces"
+                " /home/ubuntu/inspection-report.tar.gz",
+            ]
+        else:
+            inspect_cmd = [
                 "/snap/k8s/current/k8s/scripts/inspect.sh",
                 "--all-namespaces",
                 "--core-dump-dir",
                 config.CORE_DUMP_DIR,
                 "/inspection-report.tar.gz",
-            ],
+            ]
+        result = h.exec(
+            instance_id,
+            inspect_cmd,
             capture_output=True,
             text=True,
             check=False,
@@ -70,9 +85,12 @@ def _generate_inspection_report(h: harness.Harness, instance_id: str):
             f.write("stderr:\n")
             f.write(result.stderr)
 
+        report_remote = "/inspection-report.tar.gz"
+        if config.FLAVOR == "strict":
+            report_remote = "/home/ubuntu/inspection-report.tar.gz"
         h.pull_file(
             instance_id,
-            "/inspection-report.tar.gz",
+            report_remote,
             (inspection_path / instance_id / "inspection_report.tar.gz").as_posix(),
         )
     except harness.HarnessError as e:
@@ -281,7 +299,9 @@ def instances(
         )
 
         if not no_setup:
-            util.setup_core_dumps(instance)
+            if config.FLAVOR != "strict":
+                # /var/crash is not reachable under strict confinement.
+                util.setup_core_dumps(instance)
             util.setup_k8s_snap(instance, snap)
 
             if config.USE_LOCAL_MIRROR:

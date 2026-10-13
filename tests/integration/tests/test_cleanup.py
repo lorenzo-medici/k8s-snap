@@ -20,6 +20,31 @@ CONTAINERD_PATHS = [
 ]
 CNI_PATH = "/opt/cni/bin"
 
+# Under strict confinement, k8sd relocates the containerd base directory into
+# SNAP_COMMON and /opt/cni/bin is a layout whose source lives in SNAP_COMMON.
+# snapd purges all of SNAP_COMMON on `snap remove --purge`, so asserting on
+# these paths is the meaningful strict equivalent of the classic assertions
+# (the in-snap paths /etc/containerd, /opt/cni/bin etc. are never visible on
+# the host under strict, so asserting them would be vacuous).
+CONTAINERD_PATHS_STRICT = [
+    "/var/snap/k8s/common/etc/containerd",
+    "/var/snap/k8s/common/run/containerd",
+    "/var/snap/k8s/common/var/lib/containerd",
+]
+CNI_PATH_STRICT = "/var/snap/k8s/common/opt/cni/bin"
+
+
+def _containerd_paths() -> List[str]:
+    if config.FLAVOR == "strict":
+        return CONTAINERD_PATHS_STRICT
+    return CONTAINERD_PATHS
+
+
+def _cni_path() -> str:
+    if config.FLAVOR == "strict":
+        return CNI_PATH_STRICT
+    return CNI_PATH
+
 
 def _assert_paths_not_exist(instance: harness.Instance, paths: List[str]):
     paths_which_exist = [
@@ -44,7 +69,7 @@ def test_node_cleanup(instances: List[harness.Instance], tmp_path):
     util.remove_k8s_snap(instance)
 
     # Check that the containerd-related folders are removed on snap removal.
-    all_paths = CONTAINERD_PATHS + [CNI_PATH]
+    all_paths = _containerd_paths() + [_cni_path()]
     _assert_paths_not_exist(instance, all_paths)
 
     util.setup_k8s_snap(instance)
@@ -54,6 +79,10 @@ def test_node_cleanup(instances: List[harness.Instance], tmp_path):
 @pytest.mark.node_count(2)
 @pytest.mark.disable_k8s_bootstrapping()
 @pytest.mark.containerd_cfgdir("/home/ubuntu/etc/containerd")
+@pytest.mark.skipif(
+    config.FLAVOR == "strict",
+    reason="custom containerd-base-dir is unreachable under strict confinement (D11)",
+)
 @pytest.mark.tags(tags.NIGHTLY)
 def test_node_cleanup_new_containerd_path(instances: List[harness.Instance]):
     main = instances[0]
@@ -118,6 +147,10 @@ containerd-base-dir: /home/ubuntu
 @pytest.mark.node_count(2)
 @pytest.mark.disable_k8s_bootstrapping()
 @pytest.mark.containerd_cfgdir("/home/ubuntu/etc/containerd")
+@pytest.mark.skipif(
+    config.FLAVOR == "strict",
+    reason="custom containerd-base-dir is unreachable under strict confinement (D11)",
+)
 @pytest.mark.tags(tags.NIGHTLY)
 def test_containerd_base_dir_cli_flag(instances: List[harness.Instance]):
     """Tests that the --containerd-base-dir CLI flag correctly sets the
@@ -206,4 +239,4 @@ def test_containerd_path_cleanup_on_failed_init(instances: List[harness.Instance
             f"but it exited with {proc.returncode}.\n"
         )
 
-    _assert_paths_not_exist(instance, CONTAINERD_PATHS)
+    _assert_paths_not_exist(instance, _containerd_paths())
