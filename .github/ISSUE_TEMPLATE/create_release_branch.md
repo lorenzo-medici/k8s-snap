@@ -127,7 +127,12 @@ The steps are to be followed in-order, each task must be completed by the person
 [snapstore track-request]: https://forum.snapcraft.io/t/tracks-request-for-k8s-snap/39122/2
 [releases-page]: https://snapcraft.io/k8s/releases
 [.github/workflows/cla.yaml]: ../workflows/cla.yaml
+[.github/workflows/cron-jobs.yaml]: ../workflows/cron-jobs.yaml
+[.github/workflows/go.yaml]: ../workflows/go.yaml
+[.github/workflows/integration.yaml]: ..workflows/integration.yaml
+[.github/workflows/python.yaml]: ../workflows/python.yaml
 [.github/workflows/sbom.yaml]: ../workflows/sbom.yaml
+[.github/workflows/strict-integration.yaml]: ../workflows/strict-integration.yaml
 [.github/workflows/strict.yaml]: ../workflows/strict.yaml
 [.github/workflows/update-components.yaml]: ../workflows/update-components.yaml
 [/build-scripts/components/hack/update-component-versions.py]: ../../build-scripts/components/hack/update-component-versions.py

@@ -254,7 +254,6 @@ jobs:
           INPUT_CHANNEL: ${{ inputs.channel }}
           INPUT_OS: ${{ inputs.os }}
           INPUT_ARCH: ${{ inputs.arch }}
-          INPUT_FLAVOR: ${{ inputs.flavor }}
         run: |
           FULL_TEST_NODE_ID="${MATRIX_TEST}"
           # Extract short test name (part after '::') for the step display name
@@ -262,11 +261,10 @@ jobs:
           echo "short_test_name=${SHORT_TEST_NAME}" >> $GITHUB_ENV
 
           CHANNEL="${INPUT_CHANNEL}"
-          FLAVOR_PREFIX="${INPUT_FLAVOR:+${INPUT_FLAVOR}-}"
           if [ -n "$CHANNEL" ]; then
-            RAW_ARTIFACT_NAME_BASE="${INPUT_OS}-${INPUT_ARCH}-${FLAVOR_PREFIX}${CHANNEL}-${FULL_TEST_NODE_ID}-$(uuidgen)"
+            RAW_ARTIFACT_NAME_BASE="${INPUT_OS}-${INPUT_ARCH}-${CHANNEL}-${FULL_TEST_NODE_ID}-$(uuidgen)"
           else
-            RAW_ARTIFACT_NAME_BASE="${INPUT_OS}-${INPUT_ARCH}-${FLAVOR_PREFIX}${FULL_TEST_NODE_ID}-$(uuidgen)"
+            RAW_ARTIFACT_NAME_BASE="${INPUT_OS}-${INPUT_ARCH}-${FULL_TEST_NODE_ID}-$(uuidgen)"
           fi
           SANITIZED_ARTIFACT_NAME=$(echo "$RAW_ARTIFACT_NAME_BASE" | sed 's/[\/:\.\]/-/g' | sed 's/\s//g')
           echo "test_name=${SANITIZED_ARTIFACT_NAME}" >> $GITHUB_ENV
@@ -285,9 +283,7 @@ jobs:
           TEST_VERSION_UPGRADE_CHANNELS: "recent 6"
           TEST_VERSION_DOWNGRADE_CHANNELS: "recent 6"
           TEST_VERSION_UPGRADE_MIN_RELEASE: "1.32"
-          # strict-only: the test derives expectations from the installed
-          # snap's metadata and fails fast against a classic snap
-          TEST_STRICT_INTERFACE_CHANNELS: ${{ inputs.flavor == 'strict' && 'recent 6 strict' || '' }}
+          TEST_STRICT_INTERFACE_CHANNELS: "recent 6 strict"
           TEST_MIRROR_LIST: '[{"name": "ghcr.io", "port": 5000, "remote": "https://ghcr.io", "username": "${{ github.actor }}", "password": "${{ secrets.GITHUB_TOKEN }}"}, {"name": "docker.io", "port": 5001, "remote": "https://registry-1.docker.io", "username": "", "password": ""}]'
           TEST_GH_REF: ${{ github.ref_name }}
           TEST_GH_BASE_REF: ${{ github.base_ref }}

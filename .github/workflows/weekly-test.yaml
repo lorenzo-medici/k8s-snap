@@ -6,11 +6,6 @@ name: Weekly
 # and linkcheck.yaml by docs-checks.yml. Use workflow_dispatch to test an edit.
 on:
   workflow_dispatch:
-    inputs:
-      flavor:
-        description: Snap flavor to test (e.g. strict), leave empty for classic
-        default: ""
-        type: string
   schedule:
     - cron: "0 0 * * 6" # Runs every saturday at midnight
 permissions:
@@ -31,7 +26,6 @@ jobs:
       arch: ${{ matrix.arch }}
       os: ${{ matrix.os }}
       channel: ${{ matrix.channel }}
-      flavor: ${{ inputs.flavor || '' }}
       test-tags: 'up_to_weekly'
       substrate: 'multipass'
       extra-test-env: 'TEST_MULTIPASS_CLOUD_INIT=ubuntu-pro-fips-stig-${{ matrix.os }}.yaml,TEST_USE_LOCAL_MIRROR=0,TEST_PRELOAD_SNAPS=0,TEST_SKIP_CLEANUP=1'
@@ -50,7 +44,6 @@ jobs:
     with:
       arch: ${{ matrix.arch }}
       channel: ${{ matrix.channel }}
-      flavor: ${{ inputs.flavor || '' }}
       test-tags: "up_to_nightly"
       parallel: true
       # We need to reduce the max parallelism here to avoid occupying all runners.
@@ -78,7 +71,6 @@ jobs:
       arch: ${{ matrix.arch }}
       os: ${{ matrix.os }}
       channel: ${{ matrix.channel }}
-      flavor: ${{ inputs.flavor || '' }}
       test-tags: 'conformance_tests'
   
   docs:
