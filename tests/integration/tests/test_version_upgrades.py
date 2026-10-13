@@ -126,9 +126,10 @@ def test_version_upgrades(
 
             if channel.startswith("/"):
                 LOG.info("Refreshing k8s snap by path")
-                instance.exec(
-                    ["snap", "install", "--classic", "--dangerous", snap_path]
-                )
+                install_cmd = ["snap", "install", "--dangerous", snap_path]
+                if config.FLAVOR != "strict":
+                    install_cmd.append("--classic")
+                instance.exec(install_cmd)
             else:
                 util.snap_refresh(instance, channel, "--amend")
             util.wait_until_k8s_ready(cp, instances)
@@ -316,15 +317,15 @@ def test_feature_upgrades_inplace(instances: List[harness.Instance], tmp_path: P
     worker = instances[-1]
 
     for instance in instances:
-        util.stubbornly(retries=3, delay_s=30).on(instance).exec(
-            [
-                "snap",
-                "install",
-                "k8s",
-                "--classic",
-                *util.snap_channel_args(start_branch),
-            ]
-        )
+        install_cmd = [
+            "snap",
+            "install",
+            "k8s",
+            *util.snap_channel_args(start_branch),
+        ]
+        if config.FLAVOR != "strict":
+            install_cmd.append("--classic")
+        util.stubbornly(retries=3, delay_s=30).on(instance).exec(install_cmd)
 
     bootstrap_cp.exec(["k8s", "bootstrap"])
     for instance in instances:
@@ -342,7 +343,7 @@ def test_feature_upgrades_inplace(instances: List[harness.Instance], tmp_path: P
         for release in json.loads(
             bootstrap_cp.exec(
                 [
-                    "/snap/k8s/current/bin/helm",
+                    f"/snap/{config.SNAP_NAME}/current/bin/helm",
                     "--kubeconfig",
                     "/etc/kubernetes/admin.conf",
                     "list",
@@ -388,7 +389,7 @@ def test_feature_upgrades_inplace(instances: List[harness.Instance], tmp_path: P
 
         current_helm_releases = instance.exec(
             [
-                "/snap/k8s/current/bin/helm",
+                f"/snap/{config.SNAP_NAME}/current/bin/helm",
                 "--kubeconfig",
                 "/etc/kubernetes/admin.conf",
                 "list",
@@ -435,7 +436,7 @@ def test_feature_upgrades_inplace(instances: List[harness.Instance], tmp_path: P
 
     p = bootstrap_cp.exec(
         [
-            "/snap/k8s/current/bin/helm",
+            f"/snap/{config.SNAP_NAME}/current/bin/helm",
             "--kubeconfig",
             "/etc/kubernetes/admin.conf",
             "list",
@@ -500,13 +501,15 @@ def test_feature_upgrades_rollout_upgrade(
 
     # Setup the first half of nodes up on the old version.
     for instance in instances[:3]:
-        util.stubbornly(retries=3, delay_s=30).on(instance).exec(
-            ["snap", "install", "k8s", "--classic", *util.snap_channel_args(start_snap)]
-        )
+        install_cmd = ["snap", "install", "k8s", *util.snap_channel_args(start_snap)]
+        if config.FLAVOR != "strict":
+            install_cmd.append("--classic")
+        util.stubbornly(retries=3, delay_s=30).on(instance).exec(install_cmd)
 
-    util.stubbornly(retries=3, delay_s=30).on(instance).exec(
-        ["snap", "install", "k8s", "--classic", *util.snap_channel_args(start_snap)]
-    )
+    install_cmd = ["snap", "install", "k8s", *util.snap_channel_args(start_snap)]
+    if config.FLAVOR != "strict":
+        install_cmd.append("--classic")
+    util.stubbornly(retries=3, delay_s=30).on(instance).exec(install_cmd)
 
     main_old.exec(["k8s", "bootstrap"])
     for instance in instances[1:3]:
@@ -519,7 +522,7 @@ def test_feature_upgrades_rollout_upgrade(
         for release in json.loads(
             main_old.exec(
                 [
-                    "/snap/k8s/current/bin/helm",
+                    f"/snap/{config.SNAP_NAME}/current/bin/helm",
                     "--kubeconfig",
                     "/etc/kubernetes/admin.conf",
                     "list",
@@ -576,7 +579,7 @@ def test_feature_upgrades_rollout_upgrade(
         ),
     ).exec(
         [
-            "/snap/k8s/current/bin/helm",
+            f"/snap/{config.SNAP_NAME}/current/bin/helm",
             "--kubeconfig",
             "/etc/kubernetes/admin.conf",
             "list",
