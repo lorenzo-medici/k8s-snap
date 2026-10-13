@@ -41,6 +41,11 @@ flavor applies `build-scripts/patches/strict/apply` first — see "Flavors" in t
 change-profile series a confined container runtime needs). Multi-patch series are
 applied in sorted filename order, so number them (`0001-…`, `0002-…`, …).
 
+NOTE: when adding a patch in an incremental `snapcraft --use-lxd` build, the affected
+`nil`-plugin part may not be detected as changed and its stale binary is re-primed
+("Skipping build ... already ran"). Run `snapcraft clean <component> --use-lxd` before
+rebuilding. CI always builds from a fresh instance and is unaffected.
+
 To verify which patches would apply before building:
 
 ```
