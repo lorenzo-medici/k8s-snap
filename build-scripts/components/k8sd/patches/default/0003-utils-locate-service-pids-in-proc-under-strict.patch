@@ -1,0 +1,153 @@
+From 45c98496f16bf3b77a0e374c1836c942764927d0 Mon Sep 17 00:00:00 2001
+From: k8s-snap strict <k8s-snap-strict@canonical.com>
+Date: Tue, 13 Oct 2026 14:45:17 +0300
+Subject: [PATCH] utils: locate running service PIDs in /proc under strict
+ confinement
+
+RunningServiceArgs queried systemd for LoadState/ActiveState/MainPID,
+but systemctl is not usable from a strictly confined snap, so argument
+drift detection (service-args controller) and the cluster readiness DNS
+check (k8s status) both failed. Keep the systemd path for classic and
+fall back to scanning /proc for the service's argv[0].
+---
+ pkg/utils/services.go | 109 +++++++++++++++++++++++++++++-------------
+ 1 file changed, 75 insertions(+), 34 deletions(-)
+
+diff --git a/pkg/utils/services.go b/pkg/utils/services.go
+index 8d7c201..b90bf50 100644
+--- a/pkg/utils/services.go
++++ b/pkg/utils/services.go
+@@ -7,6 +7,7 @@ import (
+ 	"fmt"
+ 	"os"
+ 	"os/exec"
++	"path/filepath"
+ 	"strconv"
+ 	"strings"
+ )
+@@ -48,41 +49,9 @@ func RunningServiceArgs(ctx context.Context, serviceName string) (map[string]str
+ 	// LoadState=loaded
+ 	// ActiveState=active
+ 
+-	loadState, err := getUnitLoadState(ctx, unitName)
++	pid, err := runningServiceMainPID(ctx, unitName, serviceName)
+ 	if err != nil {
+-		return nil, fmt.Errorf("failed to get unit %q LoadState: %w", unitName, err)
+-	}
+-
+-	if loadState == LoadStateNotFound {
+-		return nil, fmt.Errorf("unit %q was not found", unitName)
+-	}
+-
+-	// unit is loaded, let's see if it's running
+-
+-	activeState, err := getUnitActiveState(ctx, unitName)
+-	if err != nil {
+-		return nil, fmt.Errorf("failed to get unit %q ActiveState: %w", unitName, err)
+-	}
+-
+-	if activeState == ActiveStateInactive {
+-		return nil, fmt.Errorf("%q: %w", unitName, ErrUnitNotRunning)
+-	}
+-
+-	// unit is loaded and running, let's get its pid
+-
+-	pid, err := getUnitMainPID(ctx, unitName)
+-	if err != nil {
+-		return nil, fmt.Errorf("failed to get unit %q MainPID: %w", unitName, err)
+-	}
+-
+-	if pid == 0 {
+-		// this should only happen in case of a race condition.
+-		// for snap services with Type=simple or Type=notify (containerd),
+-		//  MainPID is only 0 if the unit is either inactive or not-found.
+-		// since we're making sure the service is loaded and active before getting the PID,
+-		// the only possible explanation for this branch is that the service was stopped right after
+-		// we checked the load and active states.
+-		return nil, fmt.Errorf("pid is 0 for unit %q: %w", unitName, ErrUnitNotRunning)
++		return nil, err
+ 	}
+ 
+ 	cmdlineData, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+@@ -107,6 +76,78 @@ func RunningServiceArgs(ctx context.Context, serviceName string) (map[string]str
+ 	return args, nil
+ }
+ 
++// runningServiceMainPID returns the MainPID of a running snap service unit.
++// It queries systemd where that is usable (classic confinement) and falls
++// back to locating the service process by argv[0] in /proc, because
++// systemctl is not usable from a strictly confined snap.
++func runningServiceMainPID(ctx context.Context, unitName string, serviceName string) (int, error) {
++	loadState, err := getUnitLoadState(ctx, unitName)
++	if err == nil {
++		if loadState == LoadStateNotFound {
++			return 0, fmt.Errorf("unit %q was not found", unitName)
++		}
++
++		// unit is loaded, let's see if it's running
++
++		activeState, err := getUnitActiveState(ctx, unitName)
++		if err != nil {
++			return 0, fmt.Errorf("failed to get unit %q ActiveState: %w", unitName, err)
++		}
++
++		if activeState == ActiveStateInactive {
++			return 0, fmt.Errorf("%q: %w", unitName, ErrUnitNotRunning)
++		}
++
++		// unit is loaded and running, let's get its pid
++
++		pid, err := getUnitMainPID(ctx, unitName)
++		if err != nil {
++			return 0, fmt.Errorf("failed to get unit %q MainPID: %w", unitName, err)
++		}
++
++		if pid == 0 {
++			// this should only happen in case of a race condition.
++			// for snap services with Type=simple or Type=notify (containerd),
++			//  MainPID is only 0 if the unit is either inactive or not-found.
++			// since we're making sure the service is loaded and active before getting the PID,
++			// the only possible explanation for this branch is that the service was stopped right after
++			// we checked the load and active states.
++			return 0, fmt.Errorf("pid is 0 for unit %q: %w", unitName, ErrUnitNotRunning)
++		}
++
++		return pid, nil
++	}
++
++	// systemctl is not usable from a strictly confined snap; locate the
++	// service process by argv[0] in /proc instead.
++	return findServicePID(serviceName)
++}
++
++// findServicePID returns the pid of the snap service whose argv[0] points at
++// the snap's bin/<serviceName> binary.
++func findServicePID(serviceName string) (int, error) {
++	entries, err := os.ReadDir("/proc")
++	if err != nil {
++		return 0, fmt.Errorf("failed to read /proc: %w", err)
++	}
++	suffix := "/bin/" + serviceName
++	for _, entry := range entries {
++		pid, err := strconv.Atoi(entry.Name())
++		if err != nil {
++			continue
++		}
++		cmdline, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "cmdline"))
++		if err != nil {
++			continue
++		}
++		argv0, _, _ := bytes.Cut(cmdline, []byte{0})
++		if strings.HasSuffix(string(argv0), suffix) && strings.Contains(string(argv0), "/snap/") {
++			return pid, nil
++		}
++	}
++	return 0, fmt.Errorf("no running process found for service %q: %w", serviceName, ErrUnitNotRunning)
++}
++
+ type LoadState string
+ 
+ const (
+-- 
+2.43.0
+
